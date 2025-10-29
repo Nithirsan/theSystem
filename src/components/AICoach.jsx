@@ -1,78 +1,113 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
+import { Link } from 'react-router-dom'
+import { chatAPI } from '../services/api'
 
 const AICoach = () => {
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      type: 'ai',
-      text: 'Hallo! Ich bin hier, um dich auf deinem Weg zu unterstützen. Womit können wir heute anfangen?',
-      timestamp: new Date()
-    },
-    {
-      id: 2,
-      type: 'user',
-      text: 'Hilf mir, ein Ziel zu setzen.',
-      timestamp: new Date()
-    },
-    {
-      id: 3,
-      type: 'ai',
-      text: 'Großartig! Ein klares Ziel ist der erste Schritt zum Erfolg. Um welchen Lebensbereich geht es denn?',
-      timestamp: new Date(),
-      suggestions: ['Karriere', 'Gesundheit', 'Persönliches']
-    }
-  ])
+  const [sessions, setSessions] = useState([])
+  const [currentSession, setCurrentSession] = useState(null)
+  const [messages, setMessages] = useState([])
   const [newMessage, setNewMessage] = useState('')
-  const [isTyping, setIsTyping] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [isCreatingSession, setIsCreatingSession] = useState(false)
+  const messagesEndRef = useRef(null)
 
-  const handleSendMessage = () => {
-    if (newMessage.trim()) {
-      const userMessage = {
-        id: messages.length + 1,
-        type: 'user',
-        text: newMessage,
-        timestamp: new Date()
+  useEffect(() => {
+    loadSessions()
+  }, [])
+
+  useEffect(() => {
+    if (currentSession) {
+      loadMessages(currentSession.id)
+    }
+  }, [currentSession])
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages])
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  const loadSessions = async () => {
+    try {
+      const sessionsData = await chatAPI.getChatSessions()
+      setSessions(sessionsData)
+      
+      // If no current session and sessions exist, select the first one
+      if (!currentSession && sessionsData.length > 0) {
+        setCurrentSession(sessionsData[0])
       }
+    } catch (error) {
+      console.error('Failed to load sessions:', error)
+    }
+  }
+
+  const loadMessages = async (sessionId) => {
+    try {
+      const messagesData = await chatAPI.getChatMessages(sessionId)
+      setMessages(messagesData)
+    } catch (error) {
+      console.error('Failed to load messages:', error)
+    }
+  }
+
+  const createNewSession = async () => {
+    setIsCreatingSession(true)
+    try {
+      const newSession = await chatAPI.createChatSession('Neue Unterhaltung')
+      setSessions(prev => [newSession, ...prev])
+      setCurrentSession(newSession)
+      setMessages([])
+    } catch (error) {
+      console.error('Failed to create session:', error)
+    } finally {
+      setIsCreatingSession(false)
+    }
+  }
+
+  const sendMessage = async () => {
+    if (!newMessage.trim() || !currentSession) return
+
+    const userMessage = newMessage.trim()
+    setNewMessage('')
+    setIsLoading(true)
+
+    // Add user message immediately
+    const tempUserMessage = {
+      id: Date.now(),
+      type: 'user',
+      content: userMessage,
+      created_at: new Date().toISOString()
+    }
+    setMessages(prev => [...prev, tempUserMessage])
+
+    try {
+      const response = await chatAPI.sendMessage(currentSession.id, userMessage)
       
-      setMessages([...messages, userMessage])
-      setNewMessage('')
-      setIsTyping(true)
-      
-      // Simulate AI response
-      setTimeout(() => {
-        const aiResponse = {
-          id: messages.length + 2,
-          type: 'ai',
-          text: 'Das ist ein interessanter Punkt! Lass uns das genauer besprechen.',
-          timestamp: new Date()
-        }
-        setMessages(prev => [...prev, aiResponse])
-        setIsTyping(false)
-      }, 2000)
+      // Replace temp message with real user message and add AI response
+      setMessages(prev => {
+        const filtered = prev.filter(msg => msg.id !== tempUserMessage.id)
+        return [...filtered, response.user_message, response.ai_message]
+      })
+    } catch (error) {
+      console.error('Failed to send message:', error)
+      // Remove temp message on error
+      setMessages(prev => prev.filter(msg => msg.id !== tempUserMessage.id))
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      sendMessage()
     }
   }
 
   const handleSuggestionClick = (suggestion) => {
-    const userMessage = {
-      id: messages.length + 1,
-      type: 'user',
-      text: suggestion,
-      timestamp: new Date()
-    }
-    
-    setMessages([...messages, userMessage])
-    setIsTyping(true)
-    
-    setTimeout(() => {
-      const aiResponse = {
-        id: messages.length + 2,
-        type: 'ai',
-        text: `Ausgezeichnet! ${suggestion} ist ein wichtiger Bereich. Lass uns konkrete Schritte entwickeln.`,
-        timestamp: new Date()
-      }
-      setMessages(prev => [...prev, aiResponse])
-      setIsTyping(false)
-    }, 2000)
+    setNewMessage(suggestion)
   }
 
   return (
@@ -89,11 +124,38 @@ const AICoach = () => {
         </div>
         <h1 className="flex-1 text-center text-lg font-bold text-gray-900 dark:text-white">Dein Coach</h1>
         <div className="flex w-10 items-center justify-end">
-          <button className="flex h-10 w-10 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-transparent text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">
-            <span className="material-symbols-outlined text-2xl">more_vert</span>
+          <button 
+            onClick={createNewSession}
+            disabled={isCreatingSession}
+            className="flex h-10 w-10 cursor-pointer items-center justify-center overflow-hidden rounded-full bg-transparent text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white disabled:opacity-50"
+          >
+            <span className="material-symbols-outlined text-2xl">
+              {isCreatingSession ? 'refresh' : 'add'}
+            </span>
           </button>
         </div>
       </header>
+
+      {/* Sessions Sidebar */}
+      {sessions.length > 0 && (
+        <div className="border-b border-gray-200 dark:border-white/10 p-2">
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {sessions.map(session => (
+              <button
+                key={session.id}
+                onClick={() => setCurrentSession(session)}
+                className={`flex-shrink-0 px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                  currentSession?.id === session.id
+                    ? 'bg-primary text-white'
+                    : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                }`}
+              >
+                {session.title}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Chat Area */}
       <main className="flex-1 overflow-y-auto p-4">
@@ -106,43 +168,51 @@ const AICoach = () => {
 
           {/* Chat History */}
           <div className="flex flex-col gap-6">
-            {messages.map((message) => (
-              <div key={message.id} className={`flex items-end gap-3 ${message.type === 'user' ? 'justify-end' : ''}`}>
-                {message.type === 'ai' && (
-                  <div 
-                    className="aspect-square w-8 shrink-0 rounded-full bg-cover bg-center" 
-                    style={{
-                      backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuBpzjs7XfKJA785nt4rm6dISh0iW76RMvvFq5RwSNdHxw_2ZFhkTQVdPFm_NC0FM1HjdhAJED0EK6LXkPPasl3vdvA-CS6YOJAxdhKHXuswBQi4FaDaKqLw2y0eblpszplbvzYe4T1NL0_KogofAzelihFcuvob-Ai6dX6Hn_r02R4FFVAXrE-vwnLoJBYBWS8J3tN7DhOC3w224S-8SpnYwX71gbXu70oEqszJ4WZvUSakqHsUIfFqBt_A490dlmA1I1K-ICMydCY")'
-                    }}
-                  />
-                )}
-                <div className={`flex flex-1 flex-col items-start gap-1 ${message.type === 'user' ? 'items-end' : ''}`}>
-                  <p className={`flex max-w-xs rounded-xl px-4 py-3 text-base font-normal leading-normal ${
-                    message.type === 'user' 
-                      ? 'rounded-br-sm bg-primary text-white' 
-                      : 'rounded-bl-sm bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-50'
-                  }`}>
-                    {message.text}
-                  </p>
-                  {message.suggestions && (
-                    <div className="flex flex-wrap gap-2">
-                      {message.suggestions.map((suggestion, index) => (
-                        <button
-                          key={index}
-                          onClick={() => handleSuggestionClick(suggestion)}
-                          className="rounded-full border border-primary/50 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary hover:bg-primary/20 dark:border-primary/70 dark:bg-primary/20 dark:text-primary-300 dark:hover:bg-primary/30"
-                        >
-                          {suggestion}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+            {messages.length === 0 ? (
+              <div className="text-center text-gray-500 dark:text-gray-400">
+                <span className="material-symbols-outlined text-6xl mb-4 block">chat_bubble_outline</span>
+                <p>Starte eine Unterhaltung mit deinem AI Coach!</p>
+                <p className="text-sm mt-2">Er kann dir bei Gewohnheiten, Zielen und Motivation helfen.</p>
               </div>
-            ))}
+            ) : (
+              messages.map((message) => (
+                <div key={message.id} className={`flex items-end gap-3 ${message.type === 'user' ? 'justify-end' : ''}`}>
+                  {message.type === 'ai' && (
+                    <div 
+                      className="aspect-square w-8 shrink-0 rounded-full bg-cover bg-center" 
+                      style={{
+                        backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuBpzjs7XfKJA785nt4rm6dISh0iW76RMvvFq5RwSNdHxw_2ZFhkTQVdPFm_NC0FM1HjdhAJED0EK6LXkPPasl3vdvA-CS6YOJAxdhKHXuswBQi4FaDaKqLw2y0eblpszplbvzYe4T1NL0_KogofAzelihFcuvob-Ai6dX6Hn_r02R4FFVAXrE-vwnLoJBYBWS8J3tN7DhOC3w224S-8SpnYwX71gbXu70oEqszJ4WZvUSakqHsUIfFqBt_A490dlmA1I1K-ICMydCY")'
+                      }}
+                    />
+                  )}
+                  <div className={`flex flex-1 flex-col items-start gap-1 ${message.type === 'user' ? 'items-end' : ''}`}>
+                    <p className={`flex max-w-xs rounded-xl px-4 py-3 text-base font-normal leading-normal ${
+                      message.type === 'user' 
+                        ? 'rounded-br-sm bg-primary text-white' 
+                        : 'rounded-bl-sm bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-50'
+                    }`}>
+                      {message.content}
+                    </p>
+                    {message.suggestions && message.suggestions.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {message.suggestions.map((suggestion, index) => (
+                          <button
+                            key={index}
+                            onClick={() => handleSuggestionClick(suggestion)}
+                            className="rounded-full border border-primary/50 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary hover:bg-primary/20 dark:border-primary/70 dark:bg-primary/20 dark:text-primary-300 dark:hover:bg-primary/30"
+                          >
+                            {suggestion}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
 
             {/* AI Loading Indicator */}
-            {isTyping && (
+            {isLoading && (
               <div className="flex items-end gap-3">
                 <div 
                   className="aspect-square w-8 shrink-0 rounded-full bg-cover bg-center" 
@@ -161,6 +231,7 @@ const AICoach = () => {
             )}
           </div>
         </div>
+        <div ref={messagesEndRef} />
       </main>
 
       {/* Message Input Field */}
@@ -193,18 +264,20 @@ const AICoach = () => {
             <input 
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+              onKeyPress={handleKeyPress}
               className="w-full rounded-full border-gray-300 bg-gray-100 py-2.5 pl-4 pr-12 text-base text-gray-900 placeholder-gray-500 focus:border-primary focus:ring-primary dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400" 
               placeholder="Schreibe eine Nachricht..." 
               type="text"
+              disabled={isLoading}
             />
             <button className="absolute right-3 flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:text-primary dark:text-gray-400 dark:hover:text-primary-300">
               <span className="material-symbols-outlined text-2xl">mic</span>
             </button>
           </div>
           <button 
-            onClick={handleSendMessage}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-white transition-colors hover:bg-blue-600 dark:hover:bg-blue-500"
+            onClick={sendMessage}
+            disabled={!newMessage.trim() || isLoading}
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-white transition-colors hover:bg-blue-600 dark:hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="material-symbols-outlined text-2xl">send</span>
           </button>

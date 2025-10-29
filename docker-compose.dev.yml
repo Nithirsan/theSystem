@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  # Development overrides
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    environment:
+      - GIN_MODE=debug
+      - LOG_LEVEL=debug
+    volumes:
+      - ./backend:/app
+    command: ["go", "run", "cmd/server/main.go"]
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    environment:
+      - NODE_ENV=development
+      - VITE_API_URL=http://localhost:8080/api
+    volumes:
+      - .:/app
+      - /app/node_modules
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+
+  mysql:
+    ports:
+      - "3307:3306"  # Different port for dev to avoid conflicts
