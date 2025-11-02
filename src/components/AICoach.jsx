@@ -32,21 +32,25 @@ const AICoach = () => {
   const loadSessions = async () => {
     try {
       const sessionsData = await chatAPI.getChatSessions()
-      setSessions(sessionsData)
+      // Ensure sessions is always an array
+      const sessionsArray = Array.isArray(sessionsData) ? sessionsData : []
+      setSessions(sessionsArray)
       
       // If no current session and sessions exist, select the first one
-      if (!currentSession && sessionsData.length > 0) {
-        setCurrentSession(sessionsData[0])
+      if (!currentSession && sessionsArray.length > 0) {
+        setCurrentSession(sessionsArray[0])
       }
     } catch (error) {
       console.error('Failed to load sessions:', error)
+      setSessions([]) // Set to empty array on error
     }
   }
 
   const loadMessages = async (sessionId) => {
     try {
       const messagesData = await chatAPI.getChatMessages(sessionId)
-      setMessages(messagesData)
+      // Ensure messages is always an array
+      setMessages(Array.isArray(messagesData) ? messagesData : [])
     } catch (error) {
       console.error('Failed to load messages:', error)
     }
@@ -111,7 +115,7 @@ const AICoach = () => {
   }
 
   return (
-    <div className="relative mx-auto flex h-screen max-w-lg flex-col overflow-hidden bg-background-light dark:bg-background-dark">
+    <div className="relative mx-auto flex h-screen max-w-lg flex-col overflow-hidden bg-background-light dark:bg-background-dark pb-24">
       {/* Top App Bar */}
       <header className="flex shrink-0 items-center justify-between border-b border-white/10 bg-background-light px-4 py-3 dark:bg-background-dark">
         <div className="flex size-10 shrink-0 items-center">
@@ -175,7 +179,7 @@ const AICoach = () => {
                 <p className="text-sm mt-2">Er kann dir bei Gewohnheiten, Zielen und Motivation helfen.</p>
               </div>
             ) : (
-              messages.map((message) => (
+              (messages || []).map((message) => (
                 <div key={message.id} className={`flex items-end gap-3 ${message.type === 'user' ? 'justify-end' : ''}`}>
                   {message.type === 'ai' && (
                     <div 

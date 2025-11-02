@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -84,18 +85,37 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
-	// Find user
+	// Find user - handle NULL values for JSON fields
 	var user models.User
+	var preferences, settings sql.NullString
 	err := database.DB.QueryRow(`
 		SELECT id, email, password_hash, name, created_at, updated_at, preferences, settings 
 		FROM users WHERE email = ?
 	`, req.Email).Scan(
 		&user.ID, &user.Email, &user.PasswordHash, &user.Name,
-		&user.CreatedAt, &user.UpdatedAt, &user.Preferences, &user.Settings,
+		&user.CreatedAt, &user.UpdatedAt, &preferences, &settings,
 	)
-	if err != nil {
+	if err == sql.ErrNoRows {
+		log.Printf("Login attempt failed: user not found for email: %s", req.Email)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 		return
+	}
+	if err != nil {
+		log.Printf("Database error during login for email %s: %v", req.Email, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+		return
+	}
+
+	// Handle NULL JSON fields
+	if preferences.Valid {
+		user.Preferences = preferences.String
+	} else {
+		user.Preferences = "{}"
+	}
+	if settings.Valid {
+		user.Settings = settings.String
+	} else {
+		user.Settings = "{}"
 	}
 
 	// Check password - TEMPORARILY DISABLED: All logins allowed for testing
@@ -126,16 +146,34 @@ func (h *AuthHandler) GetMe(c *gin.Context) {
 	}
 
 	var user models.User
+	var preferences, settings sql.NullString
 	err := database.DB.QueryRow(`
 		SELECT id, email, name, created_at, updated_at, preferences, settings 
 		FROM users WHERE id = ?
 	`, userID).Scan(
 		&user.ID, &user.Email, &user.Name,
-		&user.CreatedAt, &user.UpdatedAt, &user.Preferences, &user.Settings,
+		&user.CreatedAt, &user.UpdatedAt, &preferences, &settings,
 	)
-	if err != nil {
+	if err == sql.ErrNoRows {
 		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
+	}
+	if err != nil {
+		log.Printf("Database error in GetMe for user_id %v: %v", userID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+		return
+	}
+
+	// Handle NULL JSON fields
+	if preferences.Valid {
+		user.Preferences = preferences.String
+	} else {
+		user.Preferences = "{}"
+	}
+	if settings.Valid {
+		user.Settings = settings.String
+	} else {
+		user.Settings = "{}"
 	}
 
 	c.JSON(http.StatusOK, user)
@@ -292,6 +330,8 @@ func (h *TaskHandler) GetTasks(c *gin.Context) {
 		err := rows.Scan(
 			&task.ID, &task.UserID, &task.Title, &task.Description,
 			&task.Priority, &task.DueDate, &task.CompletedAt,
+			&task.ParentTaskID, &task.IsRecurringTemplate,
+			&task.RecurrenceIntervalWeeks, &task.RecurrenceEndDate,
 			&task.CreatedAt, &task.UpdatedAt,
 		)
 		if err != nil {
@@ -314,10 +354,59 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		return
 	}
 
+	// If it's a recurring task, generate all instances
+	if req.IsRecurring && req.DueDate != nil && req.RecurrenceIntervalWeeks != nil && req.RecurrenceEndDate != nil {
+		var createdTasks []models.Task
+		startDate := *req.DueDate
+		endDate := *req.RecurrenceEndDate
+		intervalWeeks := *req.RecurrenceIntervalWeeks
+
+		// Generate tasks for each occurrence
+		currentDate := startDate
+		for !currentDate.After(endDate) {
+			task := models.Task{
+				UserID:                userID.(int),
+				Title:                 req.Title,
+				Description:           req.Description,
+				Priority:              req.Priority,
+				DueDate:               &currentDate,
+				IsRecurringTemplate:   false,
+				RecurrenceIntervalWeeks: nil,
+				RecurrenceEndDate:     nil,
+				CreatedAt:             time.Now(),
+				UpdatedAt:             time.Now(),
+			}
+
+			result, err := database.DB.Exec(`
+				INSERT INTO tasks (user_id, title, description, priority, due_date, is_recurring_template, recurrence_interval_weeks, recurrence_end_date)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			`, task.UserID, task.Title, task.Description, task.Priority, task.DueDate, task.IsRecurringTemplate, task.RecurrenceIntervalWeeks, task.RecurrenceEndDate)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create recurring task instance"})
+				return
+			}
+
+			taskID, _ := result.LastInsertId()
+			task.ID = int(taskID)
+			createdTasks = append(createdTasks, task)
+
+			// Move to next occurrence
+			currentDate = currentDate.AddDate(0, 0, intervalWeeks*7)
+		}
+
+		c.JSON(http.StatusCreated, gin.H{
+			"message": "Recurring tasks created",
+			"count":   len(createdTasks),
+			"tasks":   createdTasks,
+		})
+		return
+	}
+
+	// Non-recurring task - create as before
 	result, err := database.DB.Exec(`
-		INSERT INTO tasks (user_id, title, description, priority, due_date)
-		VALUES (?, ?, ?, ?, ?)
-	`, userID, req.Title, req.Description, req.Priority, req.DueDate)
+		INSERT INTO tasks (user_id, title, description, priority, due_date, is_recurring_template, recurrence_interval_weeks, recurrence_end_date)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, userID, req.Title, req.Description, req.Priority, req.DueDate, false, nil, nil)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create task"})
 		return

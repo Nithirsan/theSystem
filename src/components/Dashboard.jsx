@@ -16,10 +16,14 @@ const Dashboard = () => {
           habitsAPI.getHabits(),
           tasksAPI.getTasks()
         ])
-        setHabits(habitsData)
-        setTasks(tasksData)
+        // Ensure arrays are never null/undefined
+        setHabits(Array.isArray(habitsData) ? habitsData : [])
+        setTasks(Array.isArray(tasksData) ? tasksData : [])
       } catch (error) {
         console.error('Failed to load dashboard data:', error)
+        // Set to empty arrays on error to prevent null errors
+        setHabits([])
+        setTasks([])
       } finally {
         setLoading(false)
       }
@@ -50,19 +54,20 @@ const Dashboard = () => {
     }
   }
 
-  const todayTasks = tasks.filter(task => {
-    if (!task.due_date) return false
+  // Safely filter with null checks
+  const todayTasks = (tasks || []).filter(task => {
+    if (!task || !task.due_date) return false
     const today = new Date().toDateString()
     const dueDate = new Date(task.due_date).toDateString()
     return dueDate === today
   })
 
-  const completedToday = habits.filter(habit => {
+  const completedToday = (habits || []).filter(habit => {
     // This would need to be implemented based on your habit completion logic
     return false // Placeholder
   })
 
-  const progressPercentage = habits.length > 0 ? Math.round((completedToday.length / habits.length) * 100) : 0
+  const progressPercentage = (habits || []).length > 0 ? Math.round((completedToday.length / (habits || []).length) * 100) : 0
 
   if (loading) {
     return (
@@ -115,7 +120,7 @@ const Dashboard = () => {
         <div className="flex flex-col gap-2 bg-card-light dark:bg-card-dark rounded-xl p-5 shadow-sm">
           <h3 className="text-text-light-primary dark:text-text-dark-primary text-lg font-bold leading-tight tracking-[-0.015em] pb-2">Heutige Gewohnheiten</h3>
           <div className="divide-y divide-border-light dark:divide-border-dark">
-            {habits.slice(0, 3).map(habit => (
+            {(habits || []).slice(0, 3).map(habit => (
               <label key={habit.id} className="flex gap-x-4 py-3.5 items-center justify-between">
                 <p className="text-text-light-primary dark:text-text-dark-primary text-base font-normal leading-normal">{habit.name}</p>
                 <input 
@@ -125,7 +130,7 @@ const Dashboard = () => {
                 />
               </label>
             ))}
-            {habits.length === 0 && (
+            {(habits || []).length === 0 && (
               <p className="text-text-light-secondary dark:text-text-dark-secondary text-sm py-3.5">
                 Noch keine Gewohnheiten erstellt. <Link to="/habits" className="text-primary">Erste Gewohnheit hinzufügen</Link>
               </p>
@@ -168,7 +173,7 @@ const Dashboard = () => {
             <Link to="/habits" className="text-primary text-sm font-bold">Details</Link>
           </div>
           <div className="flex flex-col gap-4">
-            {habits.slice(0, 2).map(habit => (
+            {(habits || []).slice(0, 2).map(habit => (
               <div key={habit.id} className="flex flex-col gap-2">
                 <div className="flex justify-between items-baseline">
                   <p className="text-text-light-primary dark:text-text-dark-primary text-base font-medium">{habit.name}</p>
@@ -179,7 +184,7 @@ const Dashboard = () => {
                 </div>
               </div>
             ))}
-            {habits.length === 0 && (
+            {(habits || []).length === 0 && (
               <p className="text-text-light-secondary dark:text-text-dark-secondary text-sm">
                 Erstelle deine ersten Gewohnheiten, um deine Ziele zu verfolgen.
               </p>
@@ -188,32 +193,6 @@ const Dashboard = () => {
         </div>
       </main>
 
-      {/* Bottom Navigation Bar */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-card-light/80 dark:bg-card-dark/80 backdrop-blur-lg border-t border-border-light dark:border-border-dark h-20">
-        <div className="flex justify-around items-center h-full max-w-md mx-auto">
-          <Link to="/" className="flex flex-col items-center gap-1 text-primary">
-            <span className="material-symbols-outlined">home</span>
-            <span className="text-xs font-bold">Home</span>
-          </Link>
-          <Link to="/habits" className="flex flex-col items-center gap-1 text-text-light-secondary dark:text-text-dark-secondary">
-            <span className="material-symbols-outlined">flag</span>
-            <span className="text-xs font-medium">Ziele</span>
-          </Link>
-          <button className="flex flex-col items-center gap-1 text-text-light-secondary dark:text-text-dark-secondary relative -top-6">
-            <div className="bg-primary rounded-full h-16 w-16 flex items-center justify-center text-white shadow-lg shadow-primary/30">
-              <span className="material-symbols-outlined text-4xl">add</span>
-            </div>
-          </button>
-          <Link to="/journal" className="flex flex-col items-center gap-1 text-text-light-secondary dark:text-text-dark-secondary">
-            <span className="material-symbols-outlined">edit_square</span>
-            <span className="text-xs font-medium">Journal</span>
-          </Link>
-          <Link to="/coach" className="flex flex-col items-center gap-1 text-text-light-secondary dark:text-text-dark-secondary">
-            <span className="material-symbols-outlined">smart_toy</span>
-            <span className="text-xs font-medium">Coach</span>
-          </Link>
-        </div>
-      </nav>
     </div>
   )
 }

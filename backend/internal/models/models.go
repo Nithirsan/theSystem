@@ -137,10 +137,13 @@ type UpdateHabitRequest struct {
 
 // CreateTaskRequest represents create task request
 type CreateTaskRequest struct {
-	Title       string     `json:"title" binding:"required"`
-	Description string     `json:"description"`
-	Priority    string     `json:"priority" binding:"oneof=high medium low"`
-	DueDate     *time.Time `json:"due_date"`
+	Title                string     `json:"title" binding:"required"`
+	Description          string     `json:"description"`
+	Priority             string     `json:"priority" binding:"oneof=high medium low"`
+	DueDate              *time.Time  `json:"due_date"`
+	IsRecurring          bool       `json:"is_recurring"`
+	RecurrenceIntervalWeeks *int     `json:"recurrence_interval_weeks,omitempty"`
+	RecurrenceEndDate    *time.Time `json:"recurrence_end_date,omitempty"`
 }
 
 // UpdateTaskRequest represents update task request

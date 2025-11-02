@@ -7,6 +7,7 @@ import AICoach from './components/AICoach'
 import TodoList from './components/TodoList'
 import Journal from './components/Journal'
 import AuthPage from './components/AuthPage'
+import BottomNavigation from './components/BottomNavigation'
 
 function AppContent() {
   const { isAuthenticated, loading } = useAuth()
@@ -55,6 +56,9 @@ function AppContent() {
         <Route path="/todos" element={<TodoList />} />
         <Route path="/journal" element={<Journal />} />
       </Routes>
+      
+      {/* Bottom Navigation Bar - visible on all authenticated pages */}
+      <BottomNavigation />
     </div>
   )
 }

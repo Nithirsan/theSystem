@@ -31,9 +31,11 @@ const Journal = () => {
   const loadEntries = async () => {
     try {
       const entriesData = await journalAPI.getJournalEntries()
-      setEntries(entriesData)
+      // Ensure entries is always an array
+      setEntries(Array.isArray(entriesData) ? entriesData : [])
     } catch (error) {
       console.error('Failed to load entries:', error)
+      setEntries([]) // Set to empty array on error
     }
   }
 
@@ -42,11 +44,12 @@ const Journal = () => {
     try {
       const entry = await journalAPI.getJournalEntryByDate(date)
       setCurrentEntry(entry)
-      setMood(entry.mood || '')
-      setContent(entry.content || '')
-      setTags(entry.tags || '')
+      setMood(entry?.mood || '')
+      setContent(entry?.content || '')
+      setTags(entry?.tags || '')
     } catch (error) {
-      if (error.message.includes('not found')) {
+      // 404 is expected if no entry exists for this date - this is normal
+      if (error.message.includes('not found') || error.message.includes('404') || error.message.includes('Failed to fetch')) {
         // No entry for this date, reset form
         setCurrentEntry(null)
         setMood('')
@@ -128,7 +131,7 @@ const Journal = () => {
   }
 
   return (
-    <div className="relative flex h-auto min-h-screen w-full flex-col group/design-root overflow-x-hidden">
+    <div className="relative flex h-auto min-h-screen w-full flex-col group/design-root overflow-x-hidden pb-24">
       {/* Top App Bar */}
       <div className="flex items-center bg-background-light dark:bg-background-dark p-4 pb-2 justify-between sticky top-0 z-10">
         <div className="flex w-12 items-center justify-start">
@@ -232,11 +235,11 @@ const Journal = () => {
       </div>
 
       {/* Recent Entries */}
-      {entries.length > 0 && (
+      {(entries || []).length > 0 && (
         <div className="px-4 py-3">
           <h3 className="text-slate-800 dark:text-white text-lg font-bold mb-4">Letzte Einträge</h3>
           <div className="space-y-3">
-            {entries.slice(0, 3).map(entry => (
+            {(entries || []).slice(0, 3).map(entry => (
               <div
                 key={entry.id}
                 onClick={() => setSelectedDate(entry.entry_date.split('T')[0])}
@@ -255,7 +258,7 @@ const Journal = () => {
                       {formatDate(entry.entry_date)}
                     </p>
                     <p className="text-slate-600 dark:text-slate-300 text-sm">
-                      {entry.content.length > 100 ? entry.content.substring(0, 100) + '...' : entry.content}
+                      {(entry.content || '').length > 100 ? (entry.content || '').substring(0, 100) + '...' : (entry.content || '')}
                     </p>
                   </div>
                 </div>

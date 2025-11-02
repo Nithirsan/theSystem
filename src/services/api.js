@@ -250,7 +250,11 @@ export const journalAPI = {
     });
     
     if (!response.ok) {
-      const error = await response.json();
+      // 404 means no entry exists for this date - this is normal
+      if (response.status === 404) {
+        throw new Error('Journal entry not found');
+      }
+      const error = await response.json().catch(() => ({ error: 'Failed to fetch journal entry' }));
       throw new Error(error.error || 'Failed to fetch journal entry');
     }
     
