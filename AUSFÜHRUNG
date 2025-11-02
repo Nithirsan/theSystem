@@ -1,0 +1,12 @@
+Alles Lokal:
+Backend:
+cd backend
+go run cmd/server/main.go
+
+Frontend:
+ npm run dev
+
+ BACKEND PROZESS KILLEN:
+ Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue | Select-Object LocalPort,OwningProcess | Format-Table
+ --> OwningProcess herrausfinden [OwningProcess] 
+ taskkill /PID [OwningProcess] /F
