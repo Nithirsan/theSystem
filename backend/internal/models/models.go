@@ -51,15 +51,19 @@ type HabitCompletion struct {
 
 // Task represents a task
 type Task struct {
-	ID          int        `json:"id" db:"id"`
-	UserID      int        `json:"user_id" db:"user_id"`
-	Title       string     `json:"title" db:"title"`
-	Description string     `json:"description" db:"description"`
-	Priority    string     `json:"priority" db:"priority"`
-	DueDate     *time.Time `json:"due_date" db:"due_date"`
-	CompletedAt *time.Time `json:"completed_at" db:"completed_at"`
-	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
+	ID                      int        `json:"id" db:"id"`
+	UserID                  int        `json:"user_id" db:"user_id"`
+	Title                   string     `json:"title" db:"title"`
+	Description             string     `json:"description" db:"description"`
+	Priority                string     `json:"priority" db:"priority"`
+	DueDate                 *time.Time `json:"due_date" db:"due_date"`
+	CompletedAt             *time.Time `json:"completed_at" db:"completed_at"`
+	ParentTaskID            *int       `json:"parent_task_id" db:"parent_task_id"`
+	IsRecurringTemplate     bool       `json:"is_recurring_template" db:"is_recurring_template"`
+	RecurrenceIntervalWeeks *int       `json:"recurrence_interval_weeks" db:"recurrence_interval_weeks"`
+	RecurrenceEndDate       *time.Time `json:"recurrence_end_date" db:"recurrence_end_date"`
+	CreatedAt               time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt               time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 // JournalEntry represents a journal entry

@@ -307,7 +307,8 @@ func (h *TaskHandler) GetTasks(c *gin.Context) {
 
 	rows, err := database.DB.Query(`
 		SELECT id, user_id, title, description, priority, due_date, 
-		       completed_at, created_at, updated_at
+		       completed_at, parent_task_id, is_recurring_template, 
+		       recurrence_interval_weeks, recurrence_end_date, created_at, updated_at
 		FROM tasks WHERE user_id = ?
 		ORDER BY 
 			CASE WHEN completed_at IS NULL THEN 0 ELSE 1 END,
@@ -319,6 +320,7 @@ func (h *TaskHandler) GetTasks(c *gin.Context) {
 			due_date ASC
 	`, userID)
 	if err != nil {
+		log.Printf("Failed to query tasks for user %v: %v", userID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tasks"})
 		return
 	}
@@ -335,6 +337,7 @@ func (h *TaskHandler) GetTasks(c *gin.Context) {
 			&task.CreatedAt, &task.UpdatedAt,
 		)
 		if err != nil {
+			log.Printf("Failed to scan task for user %v: %v", userID, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan task"})
 			return
 		}
@@ -382,6 +385,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 			`, task.UserID, task.Title, task.Description, task.Priority, task.DueDate, task.IsRecurringTemplate, task.RecurrenceIntervalWeeks, task.RecurrenceEndDate)
 			if err != nil {
+				log.Printf("Failed to create recurring task instance: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create recurring task instance"})
 				return
 			}
@@ -408,6 +412,7 @@ func (h *TaskHandler) CreateTask(c *gin.Context) {
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`, userID, req.Title, req.Description, req.Priority, req.DueDate, false, nil, nil)
 	if err != nil {
+		log.Printf("Failed to create task: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create task"})
 		return
 	}
