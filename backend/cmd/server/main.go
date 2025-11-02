@@ -71,9 +71,10 @@ func main() {
 		habits := api.Group("/habits")
 		habits.Use(middleware.AuthMiddleware())
 		{
-			habits.GET("", habitHandler.GetHabits)
-			habits.POST("", habitHandler.CreateHabit)
-			habits.POST("/:id/complete", habitHandler.CompleteHabit)
+		habits.GET("", habitHandler.GetHabits)
+		habits.POST("", habitHandler.CreateHabit)
+		habits.POST("/:id/complete", habitHandler.CompleteHabit)
+		habits.GET("/completions", habitHandler.GetHabitCompletions)
 		}
 
 		// Task routes

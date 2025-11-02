@@ -32,14 +32,43 @@ const Dashboard = () => {
     loadData()
   }, [])
 
-  const handleHabitToggle = async (habitId) => {
+  const handleHabitToggle = async (habitId, e) => {
+    // Prevent default checkbox behavior - we handle it manually
+    if (e) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    
+    // Ensure habitId is a number
+    const id = typeof habitId === 'string' ? parseInt(habitId, 10) : habitId
+    
+    if (isNaN(id)) {
+      console.error('Invalid habit ID:', habitId)
+      alert('Ungültige Gewohnheits-ID')
+      return
+    }
+    
     try {
-      await habitsAPI.completeHabit(habitId)
-      // Reload habits to update completion status
+      console.log('Toggling habit:', id, 'Type:', typeof id)
+      // Make API call to toggle completion
+      const result = await habitsAPI.completeHabit(id)
+      console.log('Habit toggle API response:', result)
+      
+      // Reload habits to get updated completion status from server
       const updatedHabits = await habitsAPI.getHabits()
+      console.log('Updated habits from server:', updatedHabits)
+      
+      // Check if the habit we toggled is in the updated list
+      const toggledHabit = updatedHabits.find(h => h.id === id)
+      console.log('Toggled habit in updated list:', toggledHabit)
+      
       setHabits(updatedHabits)
+      // Progress bar will update automatically based on the new habits state
     } catch (error) {
       console.error('Failed to complete habit:', error)
+      // Show user-friendly error message
+      const errorMessage = error.message || 'Unbekannter Fehler'
+      alert(`Fehler beim Markieren der Gewohnheit: ${errorMessage}`)
     }
   }
 
@@ -49,6 +78,7 @@ const Dashboard = () => {
       // Reload tasks to update completion status
       const updatedTasks = await tasksAPI.getTasks()
       setTasks(updatedTasks)
+      // Reload will also update progress bar automatically
     } catch (error) {
       console.error('Failed to complete task:', error)
     }
@@ -62,12 +92,20 @@ const Dashboard = () => {
     return dueDate === today
   })
 
-  const completedToday = (habits || []).filter(habit => {
-    // This would need to be implemented based on your habit completion logic
-    return false // Placeholder
-  })
-
-  const progressPercentage = (habits || []).length > 0 ? Math.round((completedToday.length / (habits || []).length) * 100) : 0
+  // Calculate completed habits today
+  const completedHabitsToday = (habits || []).filter(habit => habit.completed_today === true).length
+  
+  // Calculate completed tasks today
+  const completedTasksToday = (todayTasks || []).filter(task => task.completed_at !== null).length
+  
+  // Total items for today (habits + tasks due today)
+  const totalItemsToday = (habits || []).length + todayTasks.length
+  
+  // Calculate progress percentage
+  const completedItemsToday = completedHabitsToday + completedTasksToday
+  const progressPercentage = totalItemsToday > 0 
+    ? Math.round((completedItemsToday / totalItemsToday) * 100) 
+    : 0
 
   if (loading) {
     return (
@@ -121,14 +159,23 @@ const Dashboard = () => {
           <h3 className="text-text-light-primary dark:text-text-dark-primary text-lg font-bold leading-tight tracking-[-0.015em] pb-2">Heutige Gewohnheiten</h3>
           <div className="divide-y divide-border-light dark:divide-border-dark">
             {(habits || []).slice(0, 3).map(habit => (
-              <label key={habit.id} className="flex gap-x-4 py-3.5 items-center justify-between">
+              <div key={habit.id} className="flex gap-x-4 py-3.5 items-center justify-between">
                 <p className="text-text-light-primary dark:text-text-dark-primary text-base font-normal leading-normal">{habit.name}</p>
                 <input 
-                  onChange={() => handleHabitToggle(habit.id)}
-                  className="h-6 w-6 rounded-lg border-2 border-border-light dark:border-border-dark bg-transparent text-primary checked:bg-primary checked:border-primary focus:ring-primary/50 focus:ring-2 focus:ring-offset-2 focus:ring-offset-card-light dark:focus:ring-offset-card-dark" 
+                  checked={habit.completed_today === true}
+                  onChange={(e) => {
+                    console.log('Checkbox onChange triggered for habit:', habit.id, 'Current state:', habit.completed_today)
+                    handleHabitToggle(habit.id, e)
+                  }}
+                  onClick={(e) => {
+                    console.log('Checkbox onClick triggered for habit:', habit.id)
+                    e.stopPropagation()
+                  }}
+                  className="h-6 w-6 rounded-lg border-2 border-border-light dark:border-border-dark bg-transparent text-primary checked:bg-primary checked:border-primary focus:ring-primary/50 focus:ring-2 focus:ring-offset-2 focus:ring-offset-card-light dark:focus:ring-offset-card-dark cursor-pointer appearance-none checked:appearance-auto" 
                   type="checkbox"
+                  disabled={false}
                 />
-              </label>
+              </div>
             ))}
             {(habits || []).length === 0 && (
               <p className="text-text-light-secondary dark:text-text-dark-secondary text-sm py-3.5">

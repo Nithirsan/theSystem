@@ -6,6 +6,10 @@ const HabitTracker = () => {
   const [habits, setHabits] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const [weekCompletions, setWeekCompletions] = useState([])
+  const [currentStreak, setCurrentStreak] = useState(0)
+  const [bestStreak, setBestStreak] = useState(0)
+  const [weekStart, setWeekStart] = useState(null)
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -19,6 +23,7 @@ const HabitTracker = () => {
 
   useEffect(() => {
     loadHabits()
+    loadWeekCompletions()
   }, [])
 
   const loadHabits = async () => {
@@ -39,9 +44,63 @@ const HabitTracker = () => {
       await habitsAPI.completeHabit(id)
       // Reload habits to get updated completion status
       await loadHabits()
+      // Reload week completions to update the week overview
+      await loadWeekCompletions()
     } catch (error) {
       console.error('Failed to complete habit:', error)
     }
+  }
+
+  const loadWeekCompletions = async () => {
+    try {
+      const data = await habitsAPI.getHabitCompletions()
+      setWeekCompletions(data.completions || [])
+      setCurrentStreak(data.current_streak || 0)
+      setBestStreak(data.best_streak || 0)
+      setWeekStart(data.start_date)
+    } catch (error) {
+      console.error('Failed to load week completions:', error)
+      setWeekCompletions([])
+    }
+  }
+
+  // Get dates for current week
+  const getWeekDates = () => {
+    const dates = []
+    const today = new Date()
+    const dayOfWeek = today.getDay()
+    const monday = new Date(today)
+    monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1))
+    monday.setHours(0, 0, 0, 0)
+    
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(monday)
+      date.setDate(monday.getDate() + i)
+      dates.push(date)
+    }
+    return dates
+  }
+
+  // Check if a date has completions
+  const hasCompletionForDate = (date) => {
+    const dateStr = date.toISOString().split('T')[0]
+    return weekCompletions.some(c => {
+      // Check if completion date matches
+      const completionDate = new Date(c.completion_date + 'T00:00:00')
+      return completionDate.toISOString().split('T')[0] === dateStr
+    })
+  }
+
+  // Get day name abbreviation
+  const getDayName = (date) => {
+    const days = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa']
+    return days[date.getDay()]
+  }
+
+  // Check if date is today
+  const isToday = (date) => {
+    const today = new Date()
+    return date.toDateString() === today.toDateString()
   }
 
   const handleSubmit = async (e) => {
@@ -193,16 +252,16 @@ const HabitTracker = () => {
               </div>
             </div>
             <div className="shrink-0 flex items-center gap-2">
-              <button 
-                onClick={() => toggleHabit(habit.id)}
-                className={`flex size-10 items-center justify-center rounded-full ${
-                  false // TODO: Check if habit is completed today
-                    ? `bg-${getColorForHabit(habit)}/20 text-${getColorForHabit(habit)}` 
-                    : 'border-2 border-slate-300 dark:border-slate-600'
-                }`}
-              >
-                {false && <span className="material-symbols-outlined">done</span>}
-              </button>
+                <button 
+                  onClick={() => toggleHabit(habit.id)}
+                  className={`flex size-10 items-center justify-center rounded-full ${
+                    habit.completed_today
+                      ? `bg-${getColorForHabit(habit)}/20 text-${getColorForHabit(habit)}` 
+                      : 'border-2 border-slate-300 dark:border-slate-600'
+                  }`}
+                >
+                  {habit.completed_today && <span className="material-symbols-outlined">done</span>}
+                </button>
             </div>
           </div>
         ))}
@@ -232,16 +291,16 @@ const HabitTracker = () => {
                   </div>
                 </div>
                 <div className="shrink-0 flex items-center gap-2">
-                  <button 
-                    onClick={() => toggleHabit(habit.id)}
-                    className={`flex size-10 items-center justify-center rounded-full ${
-                      false // TODO: Check if habit is completed today
-                        ? `bg-${getColorForHabit(habit)}/20 text-${getColorForHabit(habit)}` 
-                        : 'border-2 border-slate-300 dark:border-slate-600'
-                    }`}
-                  >
-                    {false && <span className="material-symbols-outlined">done</span>}
-                  </button>
+                <button 
+                  onClick={() => toggleHabit(habit.id)}
+                  className={`flex size-10 items-center justify-center rounded-full ${
+                    habit.completed_today
+                      ? `bg-${getColorForHabit(habit)}/20 text-${getColorForHabit(habit)}` 
+                      : 'border-2 border-slate-300 dark:border-slate-600'
+                  }`}
+                >
+                  {habit.completed_today && <span className="material-symbols-outlined">done</span>}
+                </button>
                 </div>
               </div>
             ))}
@@ -271,16 +330,16 @@ const HabitTracker = () => {
                   </div>
                 </div>
                 <div className="shrink-0 flex items-center gap-2">
-                  <button 
-                    onClick={() => toggleHabit(habit.id)}
-                    className={`flex size-10 items-center justify-center rounded-full ${
-                      false // TODO: Check if habit is completed today
-                        ? `bg-${getColorForHabit(habit)}/20 text-${getColorForHabit(habit)}` 
-                        : 'border-2 border-slate-300 dark:border-slate-600'
-                    }`}
-                  >
-                    {false && <span className="material-symbols-outlined">done</span>}
-                  </button>
+                <button 
+                  onClick={() => toggleHabit(habit.id)}
+                  className={`flex size-10 items-center justify-center rounded-full ${
+                    habit.completed_today
+                      ? `bg-${getColorForHabit(habit)}/20 text-${getColorForHabit(habit)}` 
+                      : 'border-2 border-slate-300 dark:border-slate-600'
+                  }`}
+                >
+                  {habit.completed_today && <span className="material-symbols-outlined">done</span>}
+                </button>
                 </div>
               </div>
             ))}
@@ -312,28 +371,32 @@ const HabitTracker = () => {
               <span className="text-sm text-text-light-secondary dark:text-text-dark-secondary">Diese Woche</span>
             </div>
             <div className="grid grid-cols-7 gap-2 text-center">
-              {['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'].map((day, index) => (
-                <div key={day} className="flex flex-col items-center gap-2">
-                  <p className={`text-xs ${index === 4 ? 'font-bold text-primary' : 'text-text-light-secondary dark:text-text-dark-secondary'}`}>
-                    {day}
-                  </p>
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                    index < 4 ? 'bg-secondary text-white' : 
-                    index === 4 ? 'border-2 border-primary' : 
-                    'bg-slate-300 dark:bg-slate-600'
-                  }`}>
-                    {(index < 4 || index === 4) && <span className="material-symbols-outlined text-base">done</span>}
+              {getWeekDates().map((date, index) => {
+                const hasCompletion = hasCompletionForDate(date)
+                const isTodayDate = isToday(date)
+                return (
+                  <div key={index} className="flex flex-col items-center gap-2">
+                    <p className={`text-xs ${isTodayDate ? 'font-bold text-primary' : 'text-text-light-secondary dark:text-text-dark-secondary'}`}>
+                      {getDayName(date)}
+                    </p>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                      hasCompletion ? 'bg-secondary text-white' : 
+                      isTodayDate ? 'border-2 border-primary' : 
+                      'bg-slate-300 dark:bg-slate-600'
+                    }`}>
+                      {hasCompletion && <span className="material-symbols-outlined text-base">done</span>}
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
             <div className="mt-6 flex justify-around">
               <div className="text-center">
-                <p className="text-xl font-bold text-accent">3 <span className="text-sm font-normal">Tage</span></p>
-                <p className="text-xs text-text-light-secondary dark:text-dark-secondary">Aktueller Streak</p>
+                <p className="text-xl font-bold text-accent">{currentStreak} <span className="text-sm font-normal">Tage</span></p>
+                <p className="text-xs text-text-light-secondary dark:text-text-dark-secondary">Aktueller Streak</p>
               </div>
               <div className="text-center">
-                <p className="text-xl font-bold text-text-light-primary dark:text-text-dark-primary">12 <span className="text-sm font-normal">Tage</span></p>
+                <p className="text-xl font-bold text-text-light-primary dark:text-text-dark-primary">{bestStreak} <span className="text-sm font-normal">Tage</span></p>
                 <p className="text-xs text-text-light-secondary dark:text-text-dark-secondary">Bester Streak</p>
               </div>
             </div>

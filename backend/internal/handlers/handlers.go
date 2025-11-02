@@ -187,27 +187,38 @@ func (h *HabitHandler) GetHabits(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 
 	rows, err := database.DB.Query(`
-		SELECT id, user_id, name, description, category, icon, color, 
-		       target_frequency, is_active, created_at, updated_at
-		FROM habits WHERE user_id = ? AND is_active = true
-		ORDER BY category, created_at
+		SELECT h.id, h.user_id, h.name, h.description, h.category, h.icon, h.color, 
+		       h.target_frequency, h.is_active, h.created_at, h.updated_at,
+		       CASE WHEN hc.id IS NOT NULL THEN true ELSE false END as completed_today
+		FROM habits h
+		LEFT JOIN habit_completions hc ON h.id = hc.habit_id AND DATE(hc.completed_at) = CURDATE()
+		WHERE h.user_id = ? AND h.is_active = true
+		ORDER BY h.category, h.created_at
 	`, userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch habits"})
+		log.Printf("Failed to query habits for user %v: %v", userID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch habits", "details": err.Error()})
 		return
 	}
 	defer rows.Close()
 
-	var habits []models.Habit
+	type HabitWithCompletion struct {
+		models.Habit
+		CompletedToday bool `json:"completed_today"`
+	}
+
+	var habits []HabitWithCompletion
 	for rows.Next() {
-		var habit models.Habit
+		var habit HabitWithCompletion
 		err := rows.Scan(
 			&habit.ID, &habit.UserID, &habit.Name, &habit.Description,
 			&habit.Category, &habit.Icon, &habit.Color, &habit.TargetFrequency,
 			&habit.IsActive, &habit.CreatedAt, &habit.UpdatedAt,
+			&habit.CompletedToday,
 		)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan habit"})
+			log.Printf("Failed to scan habit: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan habit", "details": err.Error()})
 			return
 		}
 		habits = append(habits, habit)
@@ -260,9 +271,12 @@ func (h *HabitHandler) CompleteHabit(c *gin.Context) {
 	habitIDStr := c.Param("id")
 	habitID, err := strconv.Atoi(habitIDStr)
 	if err != nil {
+		log.Printf("Invalid habit ID in CompleteHabit: %s, error: %v", habitIDStr, err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid habit ID"})
 		return
 	}
+
+	log.Printf("CompleteHabit called: habitID=%d, userID=%v", habitID, userID)
 
 	// Check if habit belongs to user
 	var habit models.Habit
@@ -270,32 +284,391 @@ func (h *HabitHandler) CompleteHabit(c *gin.Context) {
 		SELECT id, user_id FROM habits WHERE id = ? AND user_id = ?
 	`, habitID, userID).Scan(&habit.ID, &habit.UserID)
 	if err != nil {
+		log.Printf("Habit not found or doesn't belong to user: habitID=%d, userID=%v, error: %v", habitID, userID, err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Habit not found"})
 		return
 	}
 
-	// Check if already completed today
+	// Check if already completed today - if so, toggle it off (delete)
 	var existingCompletion models.HabitCompletion
 	err = database.DB.QueryRow(`
 		SELECT id FROM habit_completions 
 		WHERE habit_id = ? AND DATE(completed_at) = CURDATE()
 	`, habitID).Scan(&existingCompletion.ID)
 	if err == nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "Habit already completed today"})
+		// Already completed - toggle off by deleting the completion
+		log.Printf("Habit already completed today, deleting completion: habitID=%d", habitID)
+		_, err = database.DB.Exec(`
+			DELETE FROM habit_completions 
+			WHERE habit_id = ? AND DATE(completed_at) = CURDATE()
+		`, habitID)
+		if err != nil {
+			log.Printf("Failed to delete habit completion: habitID=%d, error: %v", habitID, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to uncomplete habit", "details": err.Error()})
+			return
+		}
+		log.Printf("Successfully uncompleted habit: habitID=%d", habitID)
+		c.JSON(http.StatusOK, gin.H{"message": "Habit uncompleted successfully", "completed": false})
+		return
+	}
+	if err != sql.ErrNoRows {
+		log.Printf("Error checking for existing completion: habitID=%d, error: %v", habitID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check habit completion status", "details": err.Error()})
 		return
 	}
 
-	// Insert completion
+	// Not completed - insert completion
+	log.Printf("Inserting new habit completion: habitID=%d, userID=%v", habitID, userID)
 	_, err = database.DB.Exec(`
 		INSERT INTO habit_completions (habit_id, user_id, completed_at, streak_count)
 		VALUES (?, ?, NOW(), 1)
 	`, habitID, userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to complete habit"})
+		log.Printf("Failed to insert habit completion: habitID=%d, userID=%v, error: %v", habitID, userID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to complete habit", "details": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Habit completed successfully"})
+	log.Printf("Successfully completed habit: habitID=%d", habitID)
+	c.JSON(http.StatusOK, gin.H{"message": "Habit completed successfully", "completed": true})
+}
+
+// GetHabitCompletions returns habit completions for a specific week
+func (h *HabitHandler) GetHabitCompletions(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	habitIDStr := c.Query("habit_id")
+	
+	// Parse start date from query (defaults to start of current week)
+	startDateStr := c.DefaultQuery("start_date", "")
+	var startDate time.Time
+	var err error
+	
+	if startDateStr != "" {
+		startDate, err = time.Parse("2006-01-02", startDateStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid start_date format. Use YYYY-MM-DD"})
+			return
+		}
+	} else {
+		// Get start of current week (Monday)
+		now := time.Now()
+		weekday := int(now.Weekday())
+		if weekday == 0 {
+			weekday = 7 // Sunday is day 7
+		}
+		startDate = now.AddDate(0, 0, -(weekday - 1)).Truncate(24 * time.Hour)
+	}
+	
+	endDate := startDate.AddDate(0, 0, 6) // End of week (Sunday)
+	
+	var rows *sql.Rows
+	if habitIDStr != "" {
+		habitID, err := strconv.Atoi(habitIDStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid habit_id"})
+			return
+		}
+		// Check if habit belongs to user
+		var habit models.Habit
+		err = database.DB.QueryRow(`
+			SELECT id FROM habits WHERE id = ? AND user_id = ?
+		`, habitID, userID).Scan(&habit.ID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Habit not found"})
+			return
+		}
+		
+		rows, err = database.DB.Query(`
+			SELECT DATE(completed_at) as completion_date, COUNT(*) as count
+			FROM habit_completions
+			WHERE habit_id = ? AND user_id = ? 
+			AND DATE(completed_at) >= ? AND DATE(completed_at) <= ?
+			GROUP BY DATE(completed_at)
+		`, habitID, userID, startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
+	} else {
+		// Get completions for all habits of the user
+		rows, err = database.DB.Query(`
+			SELECT hc.habit_id, DATE(hc.completed_at) as completion_date
+			FROM habit_completions hc
+			INNER JOIN habits h ON hc.habit_id = h.id
+			WHERE hc.user_id = ? 
+			AND h.user_id = ?
+			AND DATE(hc.completed_at) >= ? AND DATE(hc.completed_at) <= ?
+			ORDER BY hc.completed_at
+		`, userID, userID, startDate.Format("2006-01-02"), endDate.Format("2006-01-02"))
+	}
+	
+	if err != nil {
+		log.Printf("Failed to query habit completions: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch completions"})
+		return
+	}
+	defer rows.Close()
+	
+	type CompletionData struct {
+		HabitID        *int   `json:"habit_id,omitempty"`
+		CompletionDate string `json:"completion_date"`
+	}
+	
+	// Group completions by date and habit_id
+	type DateHabitMap map[string]map[int]bool // date -> habit_id -> true
+	dateHabitMap := make(DateHabitMap)
+	
+	for rows.Next() {
+		var date time.Time
+		var habitID int
+		err := rows.Scan(&date, &habitID)
+		if err != nil {
+			log.Printf("Failed to scan completion: %v", err)
+			continue
+		}
+		dateStr := date.Format("2006-01-02")
+		if dateHabitMap[dateStr] == nil {
+			dateHabitMap[dateStr] = make(map[int]bool)
+		}
+		dateHabitMap[dateStr][habitID] = true
+	}
+	
+	// Get total count of active habits for the user
+	var totalActiveHabits int
+	err = database.DB.QueryRow(`
+		SELECT COUNT(*) FROM habits WHERE user_id = ? AND is_active = true
+	`, userID).Scan(&totalActiveHabits)
+	if err != nil {
+		log.Printf("Failed to count active habits: %v", err)
+		totalActiveHabits = 0
+	}
+	
+	// Only include dates where ALL active habits were completed
+	var completions []CompletionData
+	for dateStr, habitIDs := range dateHabitMap {
+		if len(habitIDs) >= totalActiveHabits && totalActiveHabits > 0 {
+			completions = append(completions, CompletionData{
+				CompletionDate: dateStr,
+			})
+		}
+	}
+	
+	// Calculate streaks based on days where ALL habits were completed
+	var currentStreak, bestStreak int
+	if habitIDStr != "" {
+		habitID, _ := strconv.Atoi(habitIDStr)
+		currentStreak, bestStreak = calculateStreaks(habitID, userID.(int))
+	} else {
+		// Calculate streaks based on days where ALL habits were completed
+		currentStreak, bestStreak = calculateOverallStreaksAllHabits(userID.(int))
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"completions": completions,
+		"start_date": startDate.Format("2006-01-02"),
+		"end_date": endDate.Format("2006-01-02"),
+		"current_streak": currentStreak,
+		"best_streak": bestStreak,
+	})
+}
+
+// calculateStreaks calculates current and best streak for a specific habit
+func calculateStreaks(habitID, userID int) (currentStreak, bestStreak int) {
+	rows, err := database.DB.Query(`
+		SELECT DATE(completed_at) as completion_date
+		FROM habit_completions
+		WHERE habit_id = ? AND user_id = ?
+		ORDER BY completion_date DESC
+	`, habitID, userID)
+	if err != nil {
+		log.Printf("Failed to calculate streaks: %v", err)
+		return 0, 0
+	}
+	defer rows.Close()
+	
+	var dates []time.Time
+	for rows.Next() {
+		var date time.Time
+		if err := rows.Scan(&date); err != nil {
+			continue
+		}
+		dates = append(dates, date.Truncate(24 * time.Hour))
+	}
+	
+	if len(dates) == 0 {
+		return 0, 0
+	}
+	
+	// Calculate current streak (from today backwards)
+	today := time.Now().Truncate(24 * time.Hour)
+	currentStreak = 0
+	expectedDate := today
+	
+	for i := 0; i < len(dates); i++ {
+		date := dates[i]
+		if date.Equal(expectedDate) {
+			currentStreak++
+			expectedDate = expectedDate.AddDate(0, 0, -1)
+		} else if date.Before(expectedDate) {
+			break
+		}
+	}
+	
+	// Calculate best streak
+	bestStreak = 1
+	streak := 1
+	for i := 1; i < len(dates); i++ {
+		daysDiff := int(dates[i-1].Sub(dates[i]).Hours() / 24)
+		if daysDiff == 1 {
+			streak++
+			if streak > bestStreak {
+				bestStreak = streak
+			}
+		} else {
+			streak = 1
+		}
+	}
+	
+	return currentStreak, bestStreak
+}
+
+// calculateOverallStreaks calculates overall streaks across all habits
+func calculateOverallStreaks(userID int) (currentStreak, bestStreak int) {
+	rows, err := database.DB.Query(`
+		SELECT DATE(completed_at) as completion_date
+		FROM habit_completions
+		WHERE user_id = ?
+		GROUP BY DATE(completed_at)
+		ORDER BY completion_date DESC
+	`, userID)
+	if err != nil {
+		log.Printf("Failed to calculate overall streaks: %v", err)
+		return 0, 0
+	}
+	defer rows.Close()
+	
+	var dates []time.Time
+	for rows.Next() {
+		var date time.Time
+		if err := rows.Scan(&date); err != nil {
+			continue
+		}
+		dates = append(dates, date.Truncate(24 * time.Hour))
+	}
+	
+	if len(dates) == 0 {
+		return 0, 0
+	}
+	
+	// Calculate current streak (from today backwards)
+	today := time.Now().Truncate(24 * time.Hour)
+	currentStreak = 0
+	expectedDate := today
+	
+	for i := 0; i < len(dates); i++ {
+		date := dates[i]
+		if date.Equal(expectedDate) {
+			currentStreak++
+			expectedDate = expectedDate.AddDate(0, 0, -1)
+		} else if date.Before(expectedDate) {
+			break
+		}
+	}
+	
+	// Calculate best streak
+	bestStreak = 1
+	streak := 1
+	for i := 1; i < len(dates); i++ {
+		daysDiff := int(dates[i-1].Sub(dates[i]).Hours() / 24)
+		if daysDiff == 1 {
+			streak++
+			if streak > bestStreak {
+				bestStreak = streak
+			}
+		} else {
+			streak = 1
+		}
+	}
+	
+	return currentStreak, bestStreak
+}
+
+// calculateOverallStreaksAllHabits calculates streaks based on days where ALL active habits were completed
+func calculateOverallStreaksAllHabits(userID int) (currentStreak, bestStreak int) {
+	// Get total count of active habits
+	var totalActiveHabits int
+	err := database.DB.QueryRow(`
+		SELECT COUNT(*) FROM habits WHERE user_id = ? AND is_active = true
+	`, userID).Scan(&totalActiveHabits)
+	if err != nil {
+		log.Printf("Failed to count active habits: %v", err)
+		return 0, 0
+	}
+	
+	if totalActiveHabits == 0 {
+		return 0, 0
+	}
+	
+	// Get all completions grouped by date with habit counts
+	rows, err := database.DB.Query(`
+		SELECT DATE(completed_at) as completion_date, COUNT(DISTINCT habit_id) as habit_count
+		FROM habit_completions hc
+		INNER JOIN habits h ON hc.habit_id = h.id
+		WHERE hc.user_id = ? AND h.user_id = ? AND h.is_active = true
+		GROUP BY DATE(completed_at)
+		HAVING habit_count >= ?
+		ORDER BY completion_date DESC
+	`, userID, userID, totalActiveHabits)
+	if err != nil {
+		log.Printf("Failed to calculate overall streaks (all habits): %v", err)
+		return 0, 0
+	}
+	defer rows.Close()
+	
+	var dates []time.Time
+	for rows.Next() {
+		var date time.Time
+		var habitCount int
+		if err := rows.Scan(&date, &habitCount); err != nil {
+			continue
+		}
+		// Only include dates where all habits were completed
+		if habitCount >= totalActiveHabits {
+			dates = append(dates, date.Truncate(24 * time.Hour))
+		}
+	}
+	
+	if len(dates) == 0 {
+		return 0, 0
+	}
+	
+	// Calculate current streak (from today backwards)
+	today := time.Now().Truncate(24 * time.Hour)
+	currentStreak = 0
+	expectedDate := today
+	
+	for i := 0; i < len(dates); i++ {
+		date := dates[i]
+		if date.Equal(expectedDate) {
+			currentStreak++
+			expectedDate = expectedDate.AddDate(0, 0, -1)
+		} else if date.Before(expectedDate) {
+			break
+		}
+	}
+	
+	// Calculate best streak
+	bestStreak = 1
+	streak := 1
+	for i := 1; i < len(dates); i++ {
+		daysDiff := int(dates[i-1].Sub(dates[i]).Hours() / 24)
+		if daysDiff == 1 {
+			streak++
+			if streak > bestStreak {
+				bestStreak = streak
+			}
+		} else {
+			streak = 1
+		}
+	}
+	
+	return currentStreak, bestStreak
 }
 
 // TaskHandler handles task endpoints

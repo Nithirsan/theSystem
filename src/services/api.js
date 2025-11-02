@@ -112,6 +112,48 @@ export const habitsAPI = {
     return response.json();
   },
 
+  // Get habit completions for a week
+  getHabitCompletions: async (habitId = null, startDate = null) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    let url = `${API_BASE_URL}/habits/completions`;
+    const params = new URLSearchParams();
+    if (habitId) {
+      params.append('habit_id', habitId);
+    }
+    if (startDate) {
+      params.append('start_date', startDate);
+    }
+    if (params.toString()) {
+      url += '?' + params.toString();
+    }
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (!response.ok) {
+      let errorData;
+      try {
+        errorData = await response.json();
+      } catch (e) {
+        errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
+      }
+      const errorMessage = errorData.details ? `${errorData.error}: ${errorData.details}` : (errorData.error || 'Failed to fetch completions');
+      console.error('Get completions API error:', errorMessage, errorData);
+      throw new Error(errorMessage);
+    }
+    
+    return response.json();
+  },
+
   // Complete a habit
   completeHabit: async (habitId) => {
     const token = localStorage.getItem('token');
@@ -128,8 +170,15 @@ export const habitsAPI = {
     });
     
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || 'Failed to complete habit');
+      let errorData;
+      try {
+        errorData = await response.json();
+      } catch (e) {
+        errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
+      }
+      const errorMessage = errorData.details ? `${errorData.error}: ${errorData.details}` : (errorData.error || 'Failed to complete habit');
+      console.error('Complete habit API error:', errorMessage, errorData);
+      throw new Error(errorMessage);
     }
     
     return response.json();
