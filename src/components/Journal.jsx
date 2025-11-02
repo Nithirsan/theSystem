@@ -190,21 +190,24 @@ const Journal = () => {
       </div>
 
       {/* Main Text Area */}
-      <div className="flex max-w-[480px] flex-wrap items-end gap-4 px-4 py-3">
-        <label className="flex flex-col min-w-40 flex-1">
-          {isLoading ? (
-            <div className="flex items-center justify-center h-60">
-              <span className="material-symbols-outlined text-primary text-4xl animate-spin">refresh</span>
-            </div>
-          ) : (
-            <textarea 
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              className="form-input flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-xl text-slate-800 dark:text-white focus:outline-0 focus:ring-2 focus:ring-primary border border-slate-300 dark:border-slate-700 bg-transparent min-h-60 placeholder:text-slate-400 dark:placeholder:text-slate-500 p-[15px] text-base font-normal leading-relaxed" 
-              placeholder="Was geht dir heute durch den Kopf? Worauf bist du heute stolz?"
-            />
-          )}
-        </label>
+      <div className="flex items-center justify-center px-4 py-3 w-full">
+        <div className="w-full max-w-[480px] mx-auto">
+          <label className="flex flex-col w-full">
+            {isLoading ? (
+              <div className="flex items-center justify-center h-60">
+                <span className="material-symbols-outlined text-primary text-4xl animate-spin">refresh</span>
+              </div>
+            ) : (
+              <textarea 
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                style={{ textAlign: 'center' }}
+                className="form-input w-full resize-none overflow-hidden rounded-xl text-slate-800 dark:text-white focus:outline-0 focus:ring-2 focus:ring-primary border border-slate-300 dark:border-slate-700 bg-transparent min-h-60 placeholder:text-slate-400 dark:placeholder:text-slate-500 p-[15px] text-base font-normal leading-relaxed mx-auto" 
+                placeholder="Was geht dir heute durch den Kopf? Worauf bist du heute stolz?"
+              />
+            )}
+          </label>
+        </div>
       </div>
 
       {/* Tags Input */}
