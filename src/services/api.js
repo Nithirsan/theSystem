@@ -380,9 +380,56 @@ export const journalAPI = {
     
     return response.json();
   },
-};
 
-// API Service for Chat (AI Coach)
+  // Generate AI questions for journal
+  generateJournalQuestions: async (contextData) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/journal/generate-questions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(contextData),
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to generate questions');
+    }
+    
+    return response.json();
+  },
+
+  // Generate summary of journal entries
+  generateSummary: async (entries, days) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/journal/summarize`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ entries, days }),
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to generate summary');
+    }
+    
+    const data = await response.json();
+    return data.summary;
+  },
+};
 export const chatAPI = {
   // Get all chat sessions
   getChatSessions: async () => {

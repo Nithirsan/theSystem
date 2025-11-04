@@ -91,8 +91,10 @@ func main() {
 		journal.Use(middleware.AuthMiddleware())
 		{
 			journal.GET("", journalHandler.GetJournalEntries)
-			journal.GET("/:date", journalHandler.GetJournalEntryByDate)
+			journal.POST("/generate-questions", journalHandler.GenerateJournalQuestions)
+			journal.POST("/summarize", journalHandler.SummarizeJournalEntries)
 			journal.POST("", journalHandler.CreateOrUpdateJournalEntry)
+			journal.GET("/:date", journalHandler.GetJournalEntryByDate)
 			journal.PUT("/:id", journalHandler.UpdateJournalEntry)
 			journal.DELETE("/:id", journalHandler.DeleteJournalEntry)
 		}

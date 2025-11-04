@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { chatAPI } from '../services/api'
 
@@ -10,20 +10,6 @@ const AICoach = () => {
   const [isLoading, setIsLoading] = useState(false)
   const [isCreatingSession, setIsCreatingSession] = useState(false)
   const messagesEndRef = useRef(null)
-
-  useEffect(() => {
-    loadSessions()
-  }, [])
-
-  useEffect(() => {
-    if (currentSession) {
-      loadMessages(currentSession.id)
-    }
-  }, [currentSession])
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages])
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -47,57 +33,134 @@ const AICoach = () => {
   }
 
   const loadMessages = async (sessionId) => {
+    if (!sessionId) return
     try {
       const messagesData = await chatAPI.getChatMessages(sessionId)
       // Ensure messages is always an array
-      setMessages(Array.isArray(messagesData) ? messagesData : [])
+      const formattedMessages = Array.isArray(messagesData) 
+        ? messagesData.map(msg => ({
+            ...msg,
+            created_at: msg.created_at || new Date().toISOString(),
+            suggestions: msg.suggestions || []
+          }))
+        : []
+      setMessages(formattedMessages)
     } catch (error) {
       console.error('Failed to load messages:', error)
+      setMessages([])
     }
   }
 
-  const createNewSession = async () => {
+  const createNewSession = useCallback(async () => {
     setIsCreatingSession(true)
     try {
-      const newSession = await chatAPI.createChatSession('Neue Unterhaltung')
+      const timestamp = new Date().toLocaleDateString('de-DE', { 
+        day: '2-digit', 
+        month: '2-digit' 
+      })
+      const newSession = await chatAPI.createChatSession(`Unterhaltung ${timestamp}`)
       setSessions(prev => [newSession, ...prev])
       setCurrentSession(newSession)
       setMessages([])
     } catch (error) {
       console.error('Failed to create session:', error)
+      alert('Fehler beim Erstellen der Session. Bitte versuche es erneut.')
     } finally {
       setIsCreatingSession(false)
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    loadSessions()
+  }, [])
+
+  useEffect(() => {
+    if (currentSession) {
+      loadMessages(currentSession.id)
+    }
+  }, [currentSession])
+
+  useEffect(() => {
+    // Auto-select first session if available and none selected
+    if (sessions.length > 0 && !currentSession) {
+      setCurrentSession(sessions[0])
+    } else if (sessions.length === 0 && !currentSession && !isCreatingSession) {
+      // Auto-create session if none exists
+      createNewSession()
+    }
+  }, [sessions, currentSession, isCreatingSession, createNewSession])
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages])
 
   const sendMessage = async () => {
-    if (!newMessage.trim() || !currentSession) return
+    if (!newMessage.trim()) return
+
+    // Ensure we have a session
+    if (!currentSession) {
+      try {
+        await createNewSession()
+        // Wait a bit for session to be created, then retry
+        setTimeout(() => {
+          sendMessage()
+        }, 1000)
+      } catch (error) {
+        console.error('Failed to create session before sending message:', error)
+        alert('Fehler beim Erstellen der Session. Bitte versuche es erneut.')
+      }
+      return
+    }
 
     const userMessage = newMessage.trim()
     setNewMessage('')
     setIsLoading(true)
 
-    // Add user message immediately
+    // Add user message immediately for better UX
     const tempUserMessage = {
       id: Date.now(),
       type: 'user',
       content: userMessage,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      suggestions: []
     }
     setMessages(prev => [...prev, tempUserMessage])
 
     try {
       const response = await chatAPI.sendMessage(currentSession.id, userMessage)
       
-      // Replace temp message with real user message and add AI response
+      // Format response messages properly
+      const formattedUserMessage = {
+        id: response.user_message?.id || Date.now(),
+        type: 'user',
+        content: response.user_message?.content || userMessage,
+        created_at: response.user_message?.created_at || new Date().toISOString(),
+        suggestions: []
+      }
+      
+      const formattedAIMessage = {
+        id: response.ai_message?.id || Date.now() + 1,
+        type: 'ai',
+        content: response.ai_message?.content || '',
+        created_at: response.ai_message?.created_at || new Date().toISOString(),
+        suggestions: Array.isArray(response.ai_message?.suggestions) 
+          ? response.ai_message.suggestions 
+          : []
+      }
+      
+      // Replace temp message with real messages
       setMessages(prev => {
         const filtered = prev.filter(msg => msg.id !== tempUserMessage.id)
-        return [...filtered, response.user_message, response.ai_message]
+        return [...filtered, formattedUserMessage, formattedAIMessage]
       })
     } catch (error) {
       console.error('Failed to send message:', error)
       // Remove temp message on error
       setMessages(prev => prev.filter(msg => msg.id !== tempUserMessage.id))
+      
+      // Show user-friendly error
+      const errorMessage = error.message || 'Nachricht konnte nicht gesendet werden'
+      alert(`Fehler: ${errorMessage}`)
     } finally {
       setIsLoading(false)
     }
@@ -164,23 +227,25 @@ const AICoach = () => {
       {/* Chat Area */}
       <main className="flex-1 overflow-y-auto p-4">
         <div className="flex flex-col gap-6">
-          {/* Coach Persona Area */}
-          <div className="flex flex-col items-center gap-2 text-center">
-            <p className="text-sm font-normal text-gray-500 dark:text-gray-400">Heute</p>
-            <p className="text-base font-normal text-gray-700 dark:text-gray-300">Wie kann ich dir heute helfen?</p>
-          </div>
+          {/* Coach Persona Area - only show when no messages */}
+          {messages.length === 0 && (
+            <div className="flex flex-col items-center gap-2 text-center">
+              <p className="text-sm font-normal text-gray-500 dark:text-gray-400">Heute</p>
+              <p className="text-base font-normal text-gray-700 dark:text-gray-300">Wie kann ich dir heute helfen?</p>
+            </div>
+          )}
 
           {/* Chat History */}
           <div className="flex flex-col gap-6">
             {messages.length === 0 ? (
-              <div className="text-center text-gray-500 dark:text-gray-400">
+              <div className="text-center text-gray-500 dark:text-gray-400 py-8">
                 <span className="material-symbols-outlined text-6xl mb-4 block">chat_bubble_outline</span>
-                <p>Starte eine Unterhaltung mit deinem AI Coach!</p>
+                <p className="text-lg font-medium">Starte eine Unterhaltung mit deinem AI Coach!</p>
                 <p className="text-sm mt-2">Er kann dir bei Gewohnheiten, Zielen und Motivation helfen.</p>
               </div>
             ) : (
-              (messages || []).map((message) => (
-                <div key={message.id} className={`flex items-end gap-3 ${message.type === 'user' ? 'justify-end' : ''}`}>
+              (messages || []).map((message, index) => (
+                <div key={message.id || index} className={`flex items-end gap-3 ${message.type === 'user' ? 'justify-end' : ''}`}>
                   {message.type === 'ai' && (
                     <div 
                       className="aspect-square w-8 shrink-0 rounded-full bg-cover bg-center" 
@@ -190,20 +255,20 @@ const AICoach = () => {
                     />
                   )}
                   <div className={`flex flex-1 flex-col items-start gap-1 ${message.type === 'user' ? 'items-end' : ''}`}>
-                    <p className={`flex max-w-xs rounded-xl px-4 py-3 text-base font-normal leading-normal ${
+                    <p className={`flex max-w-xs rounded-xl px-4 py-3 text-base font-normal leading-normal break-words ${
                       message.type === 'user' 
                         ? 'rounded-br-sm bg-primary text-white' 
                         : 'rounded-bl-sm bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-50'
                     }`}>
-                      {message.content}
+                      {message.content || '...'}
                     </p>
-                    {message.suggestions && message.suggestions.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {message.suggestions.map((suggestion, index) => (
+                    {message.suggestions && Array.isArray(message.suggestions) && message.suggestions.length > 0 && (
+                      <div className={`flex flex-wrap gap-2 mt-2 ${message.type === 'user' ? 'justify-end' : ''}`}>
+                        {message.suggestions.map((suggestion, suggestionIndex) => (
                           <button
-                            key={index}
+                            key={suggestionIndex}
                             onClick={() => handleSuggestionClick(suggestion)}
-                            className="rounded-full border border-primary/50 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary hover:bg-primary/20 dark:border-primary/70 dark:bg-primary/20 dark:text-primary-300 dark:hover:bg-primary/30"
+                            className="rounded-full border border-primary/50 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary hover:bg-primary/20 dark:border-primary/70 dark:bg-primary/20 dark:text-primary-300 dark:hover:bg-primary/30 transition-colors"
                           >
                             {suggestion}
                           </button>
@@ -270,9 +335,9 @@ const AICoach = () => {
               onChange={(e) => setNewMessage(e.target.value)}
               onKeyPress={handleKeyPress}
               className="w-full rounded-full border-gray-300 bg-gray-100 py-2.5 pl-4 pr-12 text-base text-gray-900 placeholder-gray-500 focus:border-primary focus:ring-primary dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400" 
-              placeholder="Schreibe eine Nachricht..." 
+              placeholder={currentSession ? "Schreibe eine Nachricht..." : "Warte auf Session..."} 
               type="text"
-              disabled={isLoading}
+              disabled={isLoading || !currentSession}
             />
             <button className="absolute right-3 flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:text-primary dark:text-gray-400 dark:hover:text-primary-300">
               <span className="material-symbols-outlined text-2xl">mic</span>
@@ -280,7 +345,7 @@ const AICoach = () => {
           </div>
           <button 
             onClick={sendMessage}
-            disabled={!newMessage.trim() || isLoading}
+            disabled={!newMessage.trim() || isLoading || !currentSession}
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary text-white transition-colors hover:bg-blue-600 dark:hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="material-symbols-outlined text-2xl">send</span>

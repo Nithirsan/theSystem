@@ -910,9 +910,12 @@ func (h *JournalHandler) CreateOrUpdateJournalEntry(c *gin.Context) {
 
 	var req models.CreateJournalEntryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("Failed to bind JSON: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+
+	log.Printf("Received journal entry request: EntryDate=%v, Mood=%s, Content length=%d, Tags=%s", req.EntryDate, req.Mood, len(req.Content), req.Tags)
 
 	// Check if entry already exists for this date
 	var existingID int
@@ -922,12 +925,37 @@ func (h *JournalHandler) CreateOrUpdateJournalEntry(c *gin.Context) {
 
 	if err == sql.ErrNoRows {
 		// Create new entry
+		log.Printf("Creating new entry for user %d", userID)
+		// Ensure tags is valid JSON - if it's already a JSON string, use it; otherwise wrap it
+		tagsJSON := req.Tags
+		if req.Tags != "" && !strings.HasPrefix(strings.TrimSpace(req.Tags), "[") {
+			// If tags is not a JSON array, try to parse it as comma-separated and convert to JSON
+			tagsList := strings.Split(req.Tags, ",")
+			var cleanTags []string
+			for _, tag := range tagsList {
+				trimmed := strings.TrimSpace(tag)
+				if trimmed != "" {
+					cleanTags = append(cleanTags, trimmed)
+				}
+			}
+			if len(cleanTags) > 0 {
+				tagsJSONBytes, _ := json.Marshal(cleanTags)
+				tagsJSON = string(tagsJSONBytes)
+			} else {
+				tagsJSON = "[]"
+			}
+		}
+		if tagsJSON == "" {
+			tagsJSON = "[]"
+		}
+		
 		result, err := database.DB.Exec(`
 			INSERT INTO journal_entries (user_id, entry_date, mood, content, tags)
 			VALUES (?, ?, ?, ?, ?)
-		`, userID, req.EntryDate, req.Mood, req.Content, req.Tags)
+		`, userID, req.EntryDate, req.Mood, req.Content, tagsJSON)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create journal entry"})
+			log.Printf("Failed to create journal entry: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to create journal entry: %v", err)})
 			return
 		}
 
@@ -949,13 +977,38 @@ func (h *JournalHandler) CreateOrUpdateJournalEntry(c *gin.Context) {
 		return
 	} else {
 		// Update existing entry
+		log.Printf("Updating existing entry %d for user %d", existingID, userID)
+		// Ensure tags is valid JSON
+		tagsJSON := req.Tags
+		if req.Tags != "" && !strings.HasPrefix(strings.TrimSpace(req.Tags), "[") {
+			// If tags is not a JSON array, try to parse it as comma-separated and convert to JSON
+			tagsList := strings.Split(req.Tags, ",")
+			var cleanTags []string
+			for _, tag := range tagsList {
+				trimmed := strings.TrimSpace(tag)
+				if trimmed != "" {
+					cleanTags = append(cleanTags, trimmed)
+				}
+			}
+			if len(cleanTags) > 0 {
+				tagsJSONBytes, _ := json.Marshal(cleanTags)
+				tagsJSON = string(tagsJSONBytes)
+			} else {
+				tagsJSON = "[]"
+			}
+		}
+		if tagsJSON == "" {
+			tagsJSON = "[]"
+		}
+		
 		_, err := database.DB.Exec(`
 			UPDATE journal_entries 
 			SET mood = ?, content = ?, tags = ?, updated_at = NOW()
 			WHERE id = ?
-		`, req.Mood, req.Content, req.Tags, existingID)
+		`, req.Mood, req.Content, tagsJSON, existingID)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update journal entry"})
+			log.Printf("Failed to update journal entry: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to update journal entry: %v", err)})
 			return
 		}
 
@@ -972,6 +1025,91 @@ func (h *JournalHandler) CreateOrUpdateJournalEntry(c *gin.Context) {
 
 		c.JSON(http.StatusOK, entry)
 	}
+}
+
+// SummarizeJournalEntries generates an AI summary of journal entries
+func (h *JournalHandler) SummarizeJournalEntries(c *gin.Context) {
+	_, _ = c.Get("user_id") // User is authenticated via middleware
+
+	var req struct {
+		Entries []models.JournalEntry `json:"entries"`
+		Days    int                    `json:"days"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Build context string from entries
+	context := fmt.Sprintf("Hier sind die Journal-Einträge der letzten %d Tage:\n\n", req.Days)
+	
+	for i, entry := range req.Entries {
+		entryDate, _ := time.Parse("2006-01-02", entry.EntryDate.Format("2006-01-02"))
+		context += fmt.Sprintf("=== Eintrag %d: %s ===\n", i+1, entryDate.Format("02.01.2006"))
+		
+		if entry.Mood != "" {
+			moodLabels := map[string]string{
+				"excellent": "Ausgezeichnet",
+				"good":     "Gut",
+				"okay":     "Okay",
+				"bad":      "Schlecht",
+				"terrible": "Schrecklich",
+			}
+			if moodLabel, ok := moodLabels[entry.Mood]; ok {
+				context += fmt.Sprintf("Stimmung: %s\n", moodLabel)
+			}
+		}
+		
+		if entry.Content != "" {
+			context += fmt.Sprintf("Inhalt:\n%s\n\n", entry.Content)
+		}
+	}
+
+	// Use OpenAI service to generate summary
+	openAIService := services.NewOpenAIService()
+	
+	systemPrompt := `Du bist ein hilfreicher Assistent für ein Tagebuch-Tool. 
+Du sollst eine aussagekräftige und reflektierende Zusammenfassung der bereitgestellten Journal-Einträge erstellen.
+Die Zusammenfassung sollte:
+- Die wichtigsten Themen und Muster identifizieren
+- Die Entwicklung der Stimmung über die Zeit beschreiben
+- Wiederkehrende Themen oder Gewohnheiten hervorheben
+- Eine positive und reflektierende Perspektive bieten
+- Auf Deutsch formuliert sein
+- Maximal 500 Wörter lang sein
+
+Antworte nur mit der Zusammenfassung, kein zusätzlicher Text.`
+	
+	userMessage := fmt.Sprintf("Bitte erstelle eine Zusammenfassung dieser Journal-Einträge:\n\n%s", context)
+
+	messages := []services.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userMessage},
+	}
+
+	request := services.OpenAIRequest{
+		Model:       "gpt-3.5-turbo",
+		Messages:    messages,
+		MaxTokens:   800,
+		Temperature: 0.7,
+	}
+
+	response, err := openAIService.MakeAPIRequest(request)
+	if err != nil {
+		log.Printf("OpenAI API Error: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate summary"})
+		return
+	}
+
+	if len(response.Choices) == 0 {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "No response from AI"})
+		return
+	}
+
+	summary := response.Choices[0].Message.Content
+	
+	c.JSON(http.StatusOK, gin.H{"summary": summary})
 }
 
 // UpdateJournalEntry updates a specific journal entry
@@ -1062,6 +1200,169 @@ func (h *JournalHandler) DeleteJournalEntry(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Journal entry deleted successfully"})
+}
+
+// GenerateJournalQuestions generates AI questions based on journal context
+func (h *JournalHandler) GenerateJournalQuestions(c *gin.Context) {
+	var req struct {
+		Mood            string   `json:"mood"`
+		SelectedHabits  []string `json:"selectedHabits"`
+		SelectedTasks   []string `json:"selectedTasks"`
+		AdditionalTasks []string `json:"additionalTasks"`
+		Appreciations   []string `json:"appreciations"`
+		Improvements    []string `json:"improvements"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Build context string for AI
+	context := "Der Nutzer hat ein Tagebuch für heute erstellt mit folgenden Informationen:\n\n"
+	
+	moodLabels := map[string]string{
+		"excellent": "Ausgezeichnet",
+		"good":     "Gut",
+		"okay":     "Okay",
+		"bad":      "Schlecht",
+		"terrible": "Schrecklich",
+	}
+	
+	if moodLabel, ok := moodLabels[req.Mood]; ok {
+		context += fmt.Sprintf("Stimmung: %s\n", moodLabel)
+	}
+	
+	if len(req.SelectedHabits) > 0 {
+		context += fmt.Sprintf("Gewohnheiten heute: %s\n", strings.Join(req.SelectedHabits, ", "))
+	}
+	
+	allTasks := append(req.SelectedTasks, req.AdditionalTasks...)
+	if len(allTasks) > 0 {
+		context += fmt.Sprintf("Erledigte Aufgaben: %s\n", strings.Join(allTasks, ", "))
+	}
+	
+	if len(req.Appreciations) > 0 {
+		context += fmt.Sprintf("Wertgeschätzt heute:\n")
+		for i, app := range req.Appreciations {
+			if app != "" {
+				context += fmt.Sprintf("%d. %s\n", i+1, app)
+			}
+		}
+	}
+	
+	if len(req.Improvements) > 0 {
+		context += fmt.Sprintf("Verbesserungen für nächstes Mal:\n")
+		for i, imp := range req.Improvements {
+			if imp != "" {
+				context += fmt.Sprintf("%d. %s\n", i+1, imp)
+			}
+		}
+	}
+
+	// Use OpenAI service to generate questions
+	openAIService := services.NewOpenAIService()
+	
+	systemPrompt := `Du bist ein hilfreicher Assistent für ein Tagebuch-Tool. 
+Basierend auf den Informationen, die der Nutzer bereits eingegeben hat, generiere 2-3 passende Reflexionsfragen.
+Die Fragen sollten:
+- Auf die eingegebenen Informationen Bezug nehmen
+- Tiefgründig und nachdenklich sein
+- Dem Nutzer helfen, seinen Tag zu reflektieren
+- Auf Deutsch formuliert sein
+
+Antworte NUR mit einem JSON-Array von Fragen-Objekten im Format: [{"question": "Frage 1?"}, {"question": "Frage 2?"}]
+Kein zusätzlicher Text, nur das JSON-Array.`
+
+	userMessage := fmt.Sprintf(`Basierend auf diesen Informationen:\n\n%s\n\nGeneriere 2-3 passende Reflexionsfragen für das Tagebuch.`, context)
+
+	messages := []services.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userMessage},
+	}
+
+	request := services.OpenAIRequest{
+		Model:       "gpt-3.5-turbo",
+		Messages:    messages,
+		MaxTokens:   300,
+		Temperature: 0.7,
+	}
+
+	// Create a temporary service instance to access makeAPIRequest
+	// We need to make the request directly
+	response, err := openAIService.MakeAPIRequest(request)
+	if err != nil {
+		log.Printf("OpenAI API Error: %v", err)
+		// Fallback to default questions if AI fails
+		defaultQuestions := []gin.H{
+			{"question": "Was hat dich heute besonders motiviert?"},
+			{"question": "Gibt es etwas, wofür du heute besonders dankbar bist?"},
+		}
+		c.JSON(http.StatusOK, defaultQuestions)
+		return
+	}
+
+	if len(response.Choices) == 0 {
+		// Fallback to default questions
+		defaultQuestions := []gin.H{
+			{"question": "Was hat dich heute besonders motiviert?"},
+			{"question": "Gibt es etwas, wofür du heute besonders dankbar bist?"},
+		}
+		c.JSON(http.StatusOK, defaultQuestions)
+		return
+	}
+
+	aiResponse := response.Choices[0].Message.Content
+	
+	log.Printf("AI Response: %s", aiResponse)
+	
+	// Try to parse JSON array
+	var questions []struct {
+		Question string `json:"question"`
+	}
+	if err := json.Unmarshal([]byte(aiResponse), &questions); err != nil {
+		log.Printf("Failed to parse JSON, trying fallback: %v", err)
+		// If parsing fails, try to extract questions from text
+		// Fallback: split by line and filter
+		lines := strings.Split(aiResponse, "\n")
+		extractedQuestions := []gin.H{}
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line != "" && (strings.HasSuffix(line, "?") || strings.HasSuffix(line, ".")) {
+				// Remove quotes and brackets if present
+				line = strings.Trim(line, "\"'[]")
+				if line != "" {
+					extractedQuestions = append(extractedQuestions, gin.H{"question": line})
+				}
+			}
+		}
+		
+		// If still no questions, use defaults
+		if len(extractedQuestions) == 0 {
+			log.Printf("No questions extracted, using defaults")
+			extractedQuestions = []gin.H{
+				{"question": "Was hat dich heute besonders motiviert?"},
+				{"question": "Gibt es etwas, wofür du heute besonders dankbar bist?"},
+			}
+		}
+		log.Printf("Returning %d extracted questions", len(extractedQuestions))
+		c.JSON(http.StatusOK, extractedQuestions)
+		return
+	}
+
+	// Convert to gin.H format
+	questionObjects := make([]gin.H, len(questions))
+	for i, q := range questions {
+		questionObjects[i] = gin.H{"question": q.Question}
+	}
+
+	// Limit to max 3 questions
+	if len(questionObjects) > 3 {
+		questionObjects = questionObjects[:3]
+	}
+
+	log.Printf("Returning %d questions", len(questionObjects))
+	c.JSON(http.StatusOK, questionObjects)
 }
 
 // ChatHandler handles AI Coach chat endpoints
@@ -1173,16 +1474,20 @@ func (h *ChatHandler) GetChatMessages(c *gin.Context) {
 	var messages []models.ChatMessageResponse
 	for rows.Next() {
 		var message models.ChatMessage
-		var suggestionsJSON string
+		var suggestionsJSON sql.NullString
 		err := rows.Scan(&message.ID, &message.SessionID, &message.Type, &message.Content, &suggestionsJSON, &message.CreatedAt)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan message"})
+			log.Printf("Failed to scan message: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to scan message", "details": err.Error()})
 			return
 		}
 
 		var suggestions []string
-		if suggestionsJSON != "" {
-			json.Unmarshal([]byte(suggestionsJSON), &suggestions)
+		if suggestionsJSON.Valid && suggestionsJSON.String != "" {
+			if err := json.Unmarshal([]byte(suggestionsJSON.String), &suggestions); err != nil {
+				log.Printf("Failed to unmarshal suggestions: %v", err)
+				suggestions = []string{}
+			}
 		}
 
 		messages = append(messages, models.ChatMessageResponse{
@@ -1253,16 +1558,32 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 		if err != nil {
 			continue
 		}
-		conversationHistory = append(conversationHistory, services.Message{
-			Role:    msgType,
-			Content: content,
-		})
+		// Convert database type to OpenAI role format
+		role := msgType
+		if msgType == "ai" {
+			role = "assistant" // OpenAI expects 'assistant' not 'ai'
+		}
+		// Only include valid OpenAI roles
+		if role == "user" || role == "assistant" {
+			conversationHistory = append(conversationHistory, services.Message{
+				Role:    role,
+				Content: content,
+			})
+		}
 	}
 
-	// Generate AI response
-	aiResponse, suggestions, err := h.openAIService.GenerateCoachResponse(req.Content, conversationHistory)
+	// Build RAG context from user data
+	userContext, err := services.BuildUserContext(userID.(int))
 	if err != nil {
-		aiResponse = "Entschuldigung, ich konnte deine Nachricht nicht verarbeiten. Bitte versuche es später erneut."
+		log.Printf("Failed to build user context: %v", err)
+		userContext = "" // Continue without context if it fails
+	}
+
+	// Generate AI response with RAG context
+	aiResponse, suggestions, err := h.openAIService.GenerateCoachResponse(req.Content, conversationHistory, userContext)
+	if err != nil {
+		log.Printf("OpenAI API Error: %v", err)
+		aiResponse = fmt.Sprintf("Entschuldigung, ich konnte deine Nachricht nicht verarbeiten. Fehler: %v", err)
 		suggestions = []string{"Nachricht wiederholen", "Später versuchen"}
 	}
 

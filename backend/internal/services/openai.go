@@ -45,28 +45,48 @@ type APIError struct {
 
 // NewOpenAIService creates a new OpenAI service instance
 func NewOpenAIService() *OpenAIService {
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		fmt.Printf("WARNING: OPENAI_API_KEY environment variable is not set!\n")
+	} else {
+		fmt.Printf("OpenAI API Key loaded successfully (length: %d)\n", len(apiKey))
+	}
 	return &OpenAIService{
-		APIKey: os.Getenv("OPENAI_API_KEY"),
+		APIKey: apiKey,
 		Client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 	}
 }
 
-// GenerateCoachResponse generates a response from the AI coach
-func (s *OpenAIService) GenerateCoachResponse(userMessage string, conversationHistory []Message) (string, []string, error) {
+// GenerateCoachResponse generates a response from the AI coach with RAG context
+func (s *OpenAIService) GenerateCoachResponse(userMessage string, conversationHistory []Message, userContext string) (string, []string, error) {
 	if s.APIKey == "" {
 		return "Entschuldigung, der AI Coach ist momentan nicht verfügbar.", []string{}, fmt.Errorf("OpenAI API key not configured")
 	}
+
+	// Build system prompt with RAG context
+	systemPrompt := `Du bist ein freundlicher und motivierender AI-Coach für Gewohnheitsbildung und persönliche Entwicklung. 
+Du hilfst Benutzern dabei, ihre Ziele zu erreichen, Gewohnheiten zu entwickeln und motiviert zu bleiben.
+Antworte auf Deutsch und sei ermutigend, aber auch realistisch. 
+Gib praktische Tipps und sei ein guter Zuhörer.
+
+WICHTIG: Nutze die folgenden Informationen über den Nutzer, um personalisierte und relevante Antworten zu geben:`
+
+	if userContext != "" {
+		systemPrompt += "\n\n" + userContext
+	}
+
+	systemPrompt += `
+
+Beziehe dich in deinen Antworten auf die spezifischen Gewohnheiten, Aufgaben und Tagebuch-Einträge des Nutzers.
+Sei konkret und hilfreich basierend auf den tatsächlichen Daten des Nutzers.`
 
 	// Prepare conversation history
 	messages := []Message{
 		{
 			Role:    "system",
-			Content: `Du bist ein freundlicher und motivierender AI-Coach für Gewohnheitsbildung und persönliche Entwicklung. 
-			Du hilfst Benutzern dabei, ihre Ziele zu erreichen, Gewohnheiten zu entwickeln und motiviert zu bleiben.
-			Antworte auf Deutsch und sei ermutigend, aber auch realistisch. 
-			Gib praktische Tipps und sei ein guter Zuhörer.`,
+			Content: systemPrompt,
 		},
 	}
 
@@ -90,11 +110,13 @@ func (s *OpenAIService) GenerateCoachResponse(userMessage string, conversationHi
 	// Make API call
 	response, err := s.makeAPIRequest(request)
 	if err != nil {
+		fmt.Printf("OpenAI API Error: %v\n", err) // Debug logging
 		return "Entschuldigung, ich konnte deine Nachricht nicht verarbeiten.", []string{}, err
 	}
 
 	// Extract response
 	if len(response.Choices) == 0 {
+		fmt.Printf("OpenAI API returned no choices\n") // Debug logging
 		return "Entschuldigung, ich konnte keine Antwort generieren.", []string{}, fmt.Errorf("no response from OpenAI")
 	}
 
@@ -104,6 +126,11 @@ func (s *OpenAIService) GenerateCoachResponse(userMessage string, conversationHi
 	suggestions := s.generateSuggestions(userMessage, coachResponse)
 
 	return coachResponse, suggestions, nil
+}
+
+// MakeAPIRequest is a public wrapper for makeAPIRequest
+func (s *OpenAIService) MakeAPIRequest(request OpenAIRequest) (*OpenAIResponse, error) {
+	return s.makeAPIRequest(request)
 }
 
 // makeAPIRequest makes the actual API request to OpenAI
@@ -121,8 +148,12 @@ func (s *OpenAIService) makeAPIRequest(request OpenAIRequest) (*OpenAIResponse, 
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+s.APIKey)
 
+	fmt.Printf("Making OpenAI API request to: https://api.openai.com/v1/chat/completions\n") // Debug
+	fmt.Printf("API Key present: %v (length: %d)\n", s.APIKey != "", len(s.APIKey)) // Debug
+
 	resp, err := s.Client.Do(req)
 	if err != nil {
+		fmt.Printf("HTTP request error: %v\n", err) // Debug
 		return nil, fmt.Errorf("failed to make request: %v", err)
 	}
 	defer resp.Body.Close()
@@ -132,16 +163,26 @@ func (s *OpenAIService) makeAPIRequest(request OpenAIRequest) (*OpenAIResponse, 
 		return nil, fmt.Errorf("failed to read response: %v", err)
 	}
 
+	fmt.Printf("OpenAI API Response Status: %d\n", resp.StatusCode) // Debug
+	fmt.Printf("OpenAI API Response Body: %s\n", string(body)) // Debug
+
 	if resp.StatusCode != http.StatusOK {
-		var apiError APIError
+		var apiError struct {
+			Error struct {
+				Message string `json:"message"`
+				Type    string `json:"type"`
+			} `json:"error"`
+		}
 		if err := json.Unmarshal(body, &apiError); err != nil {
 			return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 		}
-		return nil, fmt.Errorf("OpenAI API error: %s", apiError.Message)
+		return nil, fmt.Errorf("OpenAI API error: %s (type: %s)", apiError.Error.Message, apiError.Error.Type)
 	}
 
 	var response OpenAIResponse
 	if err := json.Unmarshal(body, &response); err != nil {
+		fmt.Printf("Failed to unmarshal response: %v\n", err) // Debug
+		fmt.Printf("Response body: %s\n", string(body)) // Debug
 		return nil, fmt.Errorf("failed to unmarshal response: %v", err)
 	}
 
