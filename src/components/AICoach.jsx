@@ -2,6 +2,133 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { chatAPI } from '../services/api'
 
+// Holographic Orb Component
+const HolographicOrb = ({ size = 'md', className = '', isSpeaking = false }) => {
+  const sizeClasses = {
+    xs: 'w-8 h-8',
+    sm: 'w-10 h-10',
+    md: 'w-16 h-16',
+    lg: 'w-24 h-24',
+    xl: 'w-32 h-32'
+  }
+  
+  const nodeCount = size === 'lg' || size === 'xl' ? 8 : size === 'md' ? 6 : 4
+  const nodeSize = size === 'lg' || size === 'xl' ? 'w-1.5 h-1.5' : size === 'md' ? 'w-1 h-1' : 'w-0.5 h-0.5'
+  
+  // Generate unique IDs for this orb instance
+  const orbId = React.useMemo(() => Math.random().toString(36).substring(7), [])
+  const gridGradientId = `gridGradient-${orbId}`
+  const streamGradientId = `streamGradient-${orbId}`
+  
+  return (
+    <div 
+      className={`relative ${sizeClasses[size]} ${className} ${isSpeaking ? 'animate-gentle-float' : ''}`}
+    >
+      {/* Outer glow */}
+      <div className={`absolute inset-0 rounded-full bg-gradient-to-br from-orange-400 via-yellow-500 to-orange-500 opacity-60 blur-lg ${isSpeaking ? 'animate-pulse' : 'animate-pulse'}`} style={isSpeaking ? { animationDuration: '1s' } : {}}></div>
+      
+      {/* Main orb sphere */}
+      <div className={`relative ${sizeClasses[size]} rounded-full bg-gradient-to-br from-orange-400 via-orange-500 to-yellow-500 flex items-center justify-center overflow-hidden transition-all duration-300 ${isSpeaking ? 'ring-2 ring-orange-400/50 ring-offset-2 ring-offset-transparent' : ''}`}>
+        {/* Inner grid pattern */}
+        <div className="absolute inset-0 opacity-40">
+          <svg className="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+            {/* Grid lines */}
+            <defs>
+              <linearGradient id={gridGradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="rgba(255,255,255,0.3)" />
+                <stop offset="50%" stopColor="rgba(255,255,255,0.1)" />
+                <stop offset="100%" stopColor="rgba(255,255,255,0.3)" />
+              </linearGradient>
+            </defs>
+            {/* Horizontal lines */}
+            <line x1="0" y1="25" x2="100" y2="25" stroke={`url(#${gridGradientId})`} strokeWidth="0.5" />
+            <line x1="0" y1="50" x2="100" y2="50" stroke={`url(#${gridGradientId})`} strokeWidth="0.5" />
+            <line x1="0" y1="75" x2="100" y2="75" stroke={`url(#${gridGradientId})`} strokeWidth="0.5" />
+            {/* Vertical lines */}
+            <line x1="25" y1="0" x2="25" y2="100" stroke={`url(#${gridGradientId})`} strokeWidth="0.5" />
+            <line x1="50" y1="0" x2="50" y2="100" stroke={`url(#${gridGradientId})`} strokeWidth="0.5" />
+            <line x1="75" y1="0" x2="75" y2="100" stroke={`url(#${gridGradientId})`} strokeWidth="0.5" />
+          </svg>
+        </div>
+        
+        {/* Animated network nodes */}
+        <div className="absolute inset-0">
+          {[...Array(nodeCount)].map((_, i) => {
+            const angle = (i * 360) / nodeCount
+            const radius = size === 'lg' || size === 'xl' ? 40 : size === 'md' ? 30 : 20
+            const x = 50 + radius * Math.cos((angle * Math.PI) / 180)
+            const y = 50 + radius * Math.sin((angle * Math.PI) / 180)
+            
+            return (
+              <div
+                key={i}
+                className={`absolute ${nodeSize} rounded-full bg-white opacity-90 animate-pulse`}
+                style={{
+                  left: `${x}%`,
+                  top: `${y}%`,
+                  transform: 'translate(-50%, -50%)',
+                  animationDelay: `${i * 0.2}s`,
+                  animationDuration: isSpeaking ? '1s' : '2s'
+                }}
+              />
+            )
+          })}
+        </div>
+        
+        {/* Central core */}
+        <div className={`relative ${size === 'lg' || size === 'xl' ? 'w-8 h-8' : size === 'md' ? 'w-4 h-4' : 'w-2 h-2'} rounded-full bg-gradient-to-br from-yellow-300 to-orange-300 ${isSpeaking ? 'animate-pulse' : ''}`} style={isSpeaking ? { animationDuration: '0.8s' } : {}}>
+          <div className={`absolute inset-0 rounded-full bg-white/50 ${isSpeaking ? 'animate-ping' : ''}`} style={isSpeaking ? { animationDuration: '1s' } : {}}></div>
+        </div>
+        
+        {/* Data stream lines */}
+        <div className="absolute inset-0 opacity-30">
+          <svg className="w-full h-full" viewBox="0 0 100 100">
+            <defs>
+              <linearGradient id={streamGradientId} x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="rgba(255,255,255,0.8)" />
+                <stop offset="50%" stopColor="rgba(255,255,255,0.4)" />
+                <stop offset="100%" stopColor="rgba(255,255,255,0.8)" />
+              </linearGradient>
+            </defs>
+            {/* Animated connecting lines */}
+            <line 
+              x1="20" y1="30" x2="50" y2="50" 
+              stroke={`url(#${streamGradientId})`} 
+              strokeWidth="0.5"
+              className="animate-pulse"
+              style={{ animationDelay: '0s', animationDuration: '3s' }}
+            />
+            <line 
+              x1="80" y1="30" x2="50" y2="50" 
+              stroke={`url(#${streamGradientId})`} 
+              strokeWidth="0.5"
+              className="animate-pulse"
+              style={{ animationDelay: '0.5s', animationDuration: '3s' }}
+            />
+            <line 
+              x1="20" y1="70" x2="50" y2="50" 
+              stroke={`url(#${streamGradientId})`} 
+              strokeWidth="0.5"
+              className="animate-pulse"
+              style={{ animationDelay: '1s', animationDuration: '3s' }}
+            />
+            <line 
+              x1="80" y1="70" x2="50" y2="50" 
+              stroke={`url(#${streamGradientId})`} 
+              strokeWidth="0.5"
+              className="animate-pulse"
+              style={{ animationDelay: '1.5s', animationDuration: '3s' }}
+            />
+          </svg>
+        </div>
+        
+        {/* Rotating shimmer effect */}
+        <div className="absolute inset-0 rounded-full bg-gradient-to-r from-transparent via-white/20 to-transparent animate-spin" style={{ animationDuration: '8s' }}></div>
+      </div>
+    </div>
+  )
+}
+
 const AICoach = () => {
   const [sessions, setSessions] = useState([])
   const [currentSession, setCurrentSession] = useState(null)
@@ -181,15 +308,10 @@ const AICoach = () => {
     <div className="relative mx-auto flex h-screen max-w-lg flex-col overflow-hidden bg-background-light dark:bg-background-dark pb-24">
       {/* Top App Bar */}
       <header className="flex shrink-0 items-center justify-between border-b border-white/10 bg-background-light px-4 py-3 dark:bg-background-dark">
-        <div className="flex size-10 shrink-0 items-center">
-          <div 
-            className="aspect-square size-10 rounded-full bg-cover bg-center" 
-            style={{
-              backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuBzXvmxLNUCS4S5DD0IRYccwxNGWRiCCvzXTu5HSn4Vgw1n-VND17iVwnORqndUIrpVF7ssH6qVUCRGQiDTVUyhGqTq8nn0KwUcFe2JF86X7QRXxCzRNYC4OsYJ_mBPj01_TYaJ_D_zxAeIL8O2_pI-nvLUoSZkDL4_TQMeB5BxodU6m3VhdA2tWc4MohPjCeY4LnRdWwz0TpHDp0j471qMh0vKx3WL2y2yC-cA3KapSHqpZQlwIhFoVi3vQP-vBUteycUMtoPNmgc")'
-            }}
-          />
+        <div className="flex size-10 shrink-0 items-center justify-center">
+          <HolographicOrb size="sm" />
         </div>
-        <h1 className="flex-1 text-center text-lg font-bold text-gray-900 dark:text-white">Dein Coach</h1>
+        <h1 className="flex-1 text-center text-lg font-bold text-gray-900 dark:text-white">J.A.R.V.I.S.</h1>
         <div className="flex w-10 items-center justify-end">
           <button 
             onClick={createNewSession}
@@ -231,7 +353,7 @@ const AICoach = () => {
           {messages.length === 0 && (
             <div className="flex flex-col items-center gap-2 text-center">
               <p className="text-sm font-normal text-gray-500 dark:text-gray-400">Heute</p>
-              <p className="text-base font-normal text-gray-700 dark:text-gray-300">Wie kann ich dir heute helfen?</p>
+              <p className="text-base font-normal text-gray-700 dark:text-gray-300">Wie kann ich Ihnen heute helfen, Meister?</p>
             </div>
           )}
 
@@ -239,20 +361,33 @@ const AICoach = () => {
           <div className="flex flex-col gap-6">
             {messages.length === 0 ? (
               <div className="text-center text-gray-500 dark:text-gray-400 py-8">
-                <span className="material-symbols-outlined text-6xl mb-4 block">chat_bubble_outline</span>
-                <p className="text-lg font-medium">Starte eine Unterhaltung mit deinem AI Coach!</p>
-                <p className="text-sm mt-2">Er kann dir bei Gewohnheiten, Zielen und Motivation helfen.</p>
+                <div className="flex justify-center mb-6">
+                  <HolographicOrb size="lg" />
+                </div>
+                <p className="text-lg font-medium">Starte eine Unterhaltung mit J.A.R.V.I.S.!</p>
+                <p className="text-sm mt-2">Ihr intelligenter Partner für Strategie, Effizienz und Exzellenz.</p>
               </div>
             ) : (
-              (messages || []).map((message, index) => (
+              (() => {
+                // Find the last AI message index
+                let lastAIMessageIndex = -1
+                for (let i = messages.length - 1; i >= 0; i--) {
+                  if (messages[i].type === 'ai') {
+                    lastAIMessageIndex = i
+                    break
+                  }
+                }
+                
+                return messages.map((message, index) => {
+                  // Check if this is the last AI message (should be animated)
+                  const isLastAIMessage = message.type === 'ai' && 
+                    index === lastAIMessageIndex && 
+                    !isLoading
+                
+                return (
                 <div key={message.id || index} className={`flex items-end gap-3 ${message.type === 'user' ? 'justify-end' : ''}`}>
                   {message.type === 'ai' && (
-                    <div 
-                      className="aspect-square w-8 shrink-0 rounded-full bg-cover bg-center" 
-                      style={{
-                        backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuBpzjs7XfKJA785nt4rm6dISh0iW76RMvvFq5RwSNdHxw_2ZFhkTQVdPFm_NC0FM1HjdhAJED0EK6LXkPPasl3vdvA-CS6YOJAxdhKHXuswBQi4FaDaKqLw2y0eblpszplbvzYe4T1NL0_KogofAzelihFcuvob-Ai6dX6Hn_r02R4FFVAXrE-vwnLoJBYBWS8J3tN7DhOC3w224S-8SpnYwX71gbXu70oEqszJ4WZvUSakqHsUIfFqBt_A490dlmA1I1K-ICMydCY")'
-                      }}
-                    />
+                    <HolographicOrb size="xs" isSpeaking={isLastAIMessage} />
                   )}
                   <div className={`flex flex-1 flex-col items-start gap-1 ${message.type === 'user' ? 'items-end' : ''}`}>
                     <p className={`flex max-w-xs rounded-xl px-4 py-3 text-base font-normal leading-normal break-words ${
@@ -277,18 +412,14 @@ const AICoach = () => {
                     )}
                   </div>
                 </div>
-              ))
+              )})
+              })()
             )}
 
             {/* AI Loading Indicator */}
             {isLoading && (
               <div className="flex items-end gap-3">
-                <div 
-                  className="aspect-square w-8 shrink-0 rounded-full bg-cover bg-center" 
-                  style={{
-                    backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuDlB3Mt82cmfYinhSFvjVJvyql0G1O1LQzbVOzWrGWGrLmc4OzoUtA0wkelnSS4Ie_oniv9--eJJpAGFREJsx4s9w7tTxLba9-59msgbCfWkeG50gxkKMiifL4iZtdUubeMwy8W2YUGJ7r8bbcO7v178iDGBw5YVsy9nGdldQ8MMidR1xK43batFn5G1mPPDPxcxzAPKm62hl6MP7ljNz1tCsLu0uoAlxrXZoHO7D6bDNTuomYxFyT5oxLj4zwy7Q992oTWuJ-r_Ms")'
-                  }}
-                />
+                <HolographicOrb size="xs" isSpeaking={true} />
                 <div className="flex flex-1 flex-col items-start gap-1">
                   <div className="flex max-w-xs items-center gap-1.5 rounded-xl rounded-bl-sm bg-gray-200 px-4 py-3 dark:bg-gray-700">
                     <span className="size-2 animate-[bounce_1s_infinite] rounded-full bg-gray-400 dark:bg-gray-500"></span>
@@ -308,22 +439,22 @@ const AICoach = () => {
         {/* Suggestion Chips */}
         <div className="mb-2 flex gap-2 overflow-x-auto whitespace-nowrap px-2 pb-1 [-ms-overflow-style:none] [scrollbar-width:none]">
           <button 
-            onClick={() => handleSuggestionClick('Ich brauche Motivation')}
+            onClick={() => handleSuggestionClick('Ich brauche Fokus heute')}
             className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-700 dark:bg-gray-800 dark:text-gray-300"
           >
-            Ich brauche Motivation
+            Ich brauche Fokus heute
           </button>
           <button 
-            onClick={() => handleSuggestionClick('Wie war mein Tag?')}
+            onClick={() => handleSuggestionClick('Analyse meiner Fortschritte')}
             className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-700 dark:bg-gray-800 dark:text-gray-300"
           >
-            Wie war mein Tag?
+            Analyse meiner Fortschritte
           </button>
           <button 
-            onClick={() => handleSuggestionClick('Journal beginnen')}
+            onClick={() => handleSuggestionClick('Strategische Planung')}
             className="rounded-full bg-gray-100 px-3 py-1 text-sm text-gray-700 dark:bg-gray-800 dark:text-gray-300"
           >
-            Journal beginnen
+            Strategische Planung
           </button>
         </div>
 

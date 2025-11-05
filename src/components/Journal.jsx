@@ -451,112 +451,126 @@ const Journal = () => {
   // Render Start Screen
   if (step === 0) {
     return (
-      <div className="relative flex h-auto min-h-screen w-full flex-col group/design-root overflow-x-hidden pb-24">
+      <div className="relative flex h-auto min-h-screen w-full flex-col mx-auto max-w-lg group/design-root overflow-x-hidden pb-28">
         {/* Top App Bar */}
-        <div className="flex items-center bg-background-light dark:bg-background-dark p-4 pb-2 justify-between sticky top-0 z-10">
-          <div className="flex w-12 items-center justify-start">
-            <Link to="/" className="flex max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-full h-10 bg-transparent text-slate-800 dark:text-slate-200 gap-2 text-base font-bold leading-normal tracking-[0.015em] min-w-0 p-0 w-10">
-              <span className="material-symbols-outlined text-2xl">arrow_back</span>
-            </Link>
+        <header className="flex items-center p-5 pt-6 pb-4 justify-between glass sticky top-0 z-10 border-b border-border-light dark:border-border-dark backdrop-blur-xl">
+          <Link to="/" className="flex items-center justify-center rounded-xl h-10 w-10 text-text-light-secondary dark:text-text-dark-secondary hover:bg-background-light dark:hover:bg-background-dark transition-colors">
+            <span className="material-symbols-outlined text-xl">arrow_back</span>
+          </Link>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary-600 shadow-md">
+              <span className="material-symbols-outlined text-white text-xl">edit_square</span>
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-text-light-primary dark:text-text-dark-primary leading-tight tracking-[-0.015em]">Tagebuch</h1>
+              <p className="text-text-light-secondary dark:text-text-dark-secondary text-xs">Tägliche Reflexion</p>
+            </div>
           </div>
-          <h2 className="text-slate-800 dark:text-white text-lg font-bold leading-tight tracking-[-0.015em] flex-1 text-center">Tagebuch</h2>
-          <div className="flex w-12 items-center justify-end gap-2">
-            <span className="material-symbols-outlined text-slate-500 dark:text-slate-400 text-xl">lock</span>
-          </div>
-        </div>
+          <div className="w-10"></div>
+        </header>
 
         {/* Date Display */}
-        <div className="flex items-center justify-center px-4 pt-8 pb-6">
-          <h2 className="text-slate-800 dark:text-white tracking-light text-xl font-bold leading-tight text-center">
-            {formatDate(selectedDate)}
-          </h2>
+        <div className="flex items-center justify-center px-5 pt-6 pb-4">
+          <div className="card text-center w-full max-w-sm">
+            <p className="text-text-light-secondary dark:text-text-dark-secondary text-sm mb-1">Heute</p>
+            <h2 className="text-text-light-primary dark:text-text-dark-primary text-xl font-bold leading-tight">
+              {formatDate(selectedDate)}
+            </h2>
+          </div>
         </div>
 
         {/* Content based on whether entry exists */}
-        {checkingEntry ? (
-          <div className="flex items-center justify-center px-4 py-8 flex-grow">
-            <div className="flex flex-col items-center gap-4">
-              <span className="material-symbols-outlined text-primary text-4xl animate-spin">refresh</span>
-              <p className="text-slate-600 dark:text-slate-400 text-center">
-                Prüfe Journal-Eintrag...
-              </p>
+        <main className="flex-grow px-5 pb-6">
+          {checkingEntry ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="flex flex-col items-center gap-4 animate-fade-in">
+                <span className="material-symbols-outlined text-primary text-5xl animate-spin">refresh</span>
+                <p className="text-text-light-secondary dark:text-text-dark-secondary text-center">
+                  Prüfe Journal-Eintrag...
+                </p>
+              </div>
             </div>
-          </div>
-        ) : hasEntryForToday ? (
-          <div className="flex flex-col items-center justify-center px-4 py-8 flex-grow gap-6">
-            <div className="flex flex-col items-center gap-4 max-w-md text-center">
-              <span className="material-symbols-outlined text-primary text-6xl">check_circle</span>
-              <h3 className="text-slate-800 dark:text-white text-xl font-bold">
-                Journal für heute bereits erstellt
-              </h3>
-              <p className="text-slate-600 dark:text-slate-400">
-                Du hast heute bereits ein Journal-Eintrag erstellt. Du kannst morgen einen neuen Eintrag erstellen.
-              </p>
-            </div>
-            
-            {/* Summary Button */}
-            <button
-              onClick={() => setShowSummaryDialog(true)}
-              className="flex items-center justify-center gap-2 rounded-full bg-primary text-white px-6 py-3 text-base font-bold hover:bg-primary/80 transition-colors shadow-lg"
-            >
-              <span className="material-symbols-outlined">summarize</span>
-              Journals der letzten Tage zusammenfassen
-            </button>
-          </div>
-        ) : (
-          <div className="flex flex-col items-center justify-center px-4 py-8 flex-grow gap-6">
-            <button
-              onClick={() => setStep(1)}
-              className="flex items-center justify-center rounded-full bg-[#F8C8B3] text-slate-900 px-8 h-16 text-xl font-bold hover:bg-[#F8C8B3]/80 transition-colors shadow-lg"
-            >
-              Journal für heute starten
-            </button>
-            
-            {/* Summary Button */}
-            <button
-              onClick={() => setShowSummaryDialog(true)}
-              className="flex items-center justify-center gap-2 rounded-full bg-primary text-white px-6 py-3 text-base font-bold hover:bg-primary/80 transition-colors shadow-lg"
-            >
-              <span className="material-symbols-outlined">summarize</span>
-              Journals der letzten Tage zusammenfassen
-            </button>
-          </div>
-        )}
-
-        {/* Recent Entries Section */}
-        {recentEntries.length > 0 && (
-          <div className="px-4 pb-8">
-            <h3 className="text-slate-800 dark:text-white text-lg font-bold mb-4">Letzte Journals</h3>
-            <div className="space-y-3">
-              {recentEntries.map((entry) => (
-                <div
-                  key={entry.id}
-                  className="bg-slate-100 dark:bg-slate-800 rounded-xl p-4 cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-                  onClick={() => {
-                    setSelectedDate(entry.entry_date)
-                    setStep(0)
-                  }}
+          ) : hasEntryForToday ? (
+            <div className="flex flex-col items-center justify-center py-8 gap-6 animate-fade-in">
+              <div className="card-hover text-center max-w-md">
+                <div className="flex items-center justify-center mb-4">
+                  <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-success to-success-600 shadow-lg">
+                    <span className="material-symbols-outlined text-white text-3xl">check_circle</span>
+                  </div>
+                </div>
+                <h3 className="text-text-light-primary dark:text-text-dark-primary text-xl font-bold mb-2">
+                  Journal für heute bereits erstellt
+                </h3>
+                <p className="text-text-light-secondary dark:text-text-dark-secondary mb-6">
+                  Du hast heute bereits ein Journal-Eintrag erstellt. Du kannst morgen einen neuen Eintrag erstellen.
+                </p>
+                
+                {/* Summary Button */}
+                <button
+                  onClick={() => setShowSummaryDialog(true)}
+                  className="btn-primary w-full flex items-center justify-center gap-2"
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-slate-800 dark:text-white font-semibold">
-                      {formatDate(entry.entry_date)}
-                    </span>
-                    {entry.mood && (
-                      <span className="text-2xl">
-                        {moods.find(m => m.value === entry.mood)?.emoji || '📝'}
+                  <span className="material-symbols-outlined">summarize</span>
+                  Journals zusammenfassen
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-8 gap-4 animate-fade-in">
+              <button
+                onClick={() => setStep(1)}
+                className="btn-primary flex items-center justify-center gap-2 px-8 py-4 text-lg rounded-full shadow-lg w-full max-w-sm"
+              >
+                <span className="material-symbols-outlined">edit_square</span>
+                Journal für heute starten
+              </button>
+              
+              {/* Summary Button */}
+              <button
+                onClick={() => setShowSummaryDialog(true)}
+                className="btn-secondary flex items-center justify-center gap-2 w-full max-w-sm"
+              >
+                <span className="material-symbols-outlined">summarize</span>
+                Journals zusammenfassen
+              </button>
+            </div>
+          )}
+
+          {/* Recent Entries Section */}
+          {recentEntries.length > 0 && (
+            <div className="mt-8">
+              <h3 className="text-text-light-primary dark:text-text-dark-primary text-lg font-bold mb-4">Letzte Journals</h3>
+              <div className="space-y-3">
+                {recentEntries.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="card-hover cursor-pointer animate-fade-in"
+                    onClick={() => {
+                      setSelectedDate(entry.entry_date)
+                      setStep(0)
+                    }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-text-light-primary dark:text-text-dark-primary font-semibold">
+                        {formatDate(entry.entry_date)}
                       </span>
+                      {entry.mood && (
+                        <span className="text-3xl">
+                          {moods.find(m => m.value === entry.mood)?.emoji || '📝'}
+                        </span>
+                      )}
+                    </div>
+                    {entry.content && (
+                      <p className="text-text-light-secondary dark:text-text-dark-secondary text-sm line-clamp-2 mt-2">
+                        {entry.content.substring(0, 100)}...
+                      </p>
                     )}
                   </div>
-                  {entry.content && (
-                    <p className="text-slate-600 dark:text-slate-400 text-sm line-clamp-2">
-                      {entry.content.substring(0, 100)}...
-                    </p>
-                  )}
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </main>
 
         {/* Summary Dialog */}
         {showSummaryDialog && (
@@ -626,47 +640,53 @@ const Journal = () => {
 
   // Render Steps
   return (
-    <div className="relative flex h-auto min-h-screen w-full flex-col group/design-root overflow-x-hidden pb-24">
+    <div className="relative flex h-auto min-h-screen w-full flex-col mx-auto max-w-lg group/design-root overflow-x-hidden pb-28">
       {/* Top App Bar */}
-      <div className="flex items-center bg-background-light dark:bg-background-dark p-4 pb-2 justify-between sticky top-0 z-10">
-        <div className="flex w-12 items-center justify-start">
+      <header className="flex items-center p-5 pt-6 pb-4 justify-between glass sticky top-0 z-10 border-b border-border-light dark:border-border-dark backdrop-blur-xl">
+        <div className="flex items-center justify-start">
           {step > 1 ? (
             <button
               onClick={handleBack}
-              className="flex max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-full h-10 bg-transparent text-slate-800 dark:text-slate-200 gap-2 text-base font-bold leading-normal tracking-[0.015em] min-w-0 p-0 w-10"
+              className="flex items-center justify-center rounded-xl h-10 w-10 text-text-light-secondary dark:text-text-dark-secondary hover:bg-background-light dark:hover:bg-background-dark transition-colors"
             >
-              <span className="material-symbols-outlined text-2xl">arrow_back</span>
+              <span className="material-symbols-outlined text-xl">arrow_back</span>
             </button>
           ) : (
-            <Link to="/" className="flex max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-full h-10 bg-transparent text-slate-800 dark:text-slate-200 gap-2 text-base font-bold leading-normal tracking-[0.015em] min-w-0 p-0 w-10">
-              <span className="material-symbols-outlined text-2xl">arrow_back</span>
+            <Link to="/" className="flex items-center justify-center rounded-xl h-10 w-10 text-text-light-secondary dark:text-text-dark-secondary hover:bg-background-light dark:hover:bg-background-dark transition-colors">
+              <span className="material-symbols-outlined text-xl">arrow_back</span>
             </Link>
           )}
         </div>
-        <h2 className="text-slate-800 dark:text-white text-lg font-bold leading-tight tracking-[-0.015em] flex-1 text-center">
-          Schritt {step} {step > 5 && aiQuestions.length > 0 ? `von ${5 + aiQuestions.length}` : step <= 5 ? 'von 5' : ''}
-        </h2>
-        <div className="flex w-12 items-center justify-end gap-2">
-          <span className="material-symbols-outlined text-slate-500 dark:text-slate-400 text-xl">lock</span>
+        <div className="flex items-center gap-2">
+          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary-600 shadow-md">
+            <span className="material-symbols-outlined text-white text-xl">edit_square</span>
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-text-light-primary dark:text-text-dark-primary leading-tight tracking-[-0.015em]">
+              Schritt {step} {step > 5 && aiQuestions.length > 0 ? `von ${5 + aiQuestions.length}` : step <= 5 ? 'von 5' : ''}
+            </h1>
+            <p className="text-text-light-secondary dark:text-text-dark-secondary text-xs">Tagebuch</p>
+          </div>
         </div>
-      </div>
+        <div className="w-10"></div>
+      </header>
 
       {/* Progress Indicator */}
-      <div className="px-4 pt-4 pb-2">
-        <div className="w-full bg-slate-200 dark:bg-slate-800 rounded-full h-2">
+      <div className="px-5 pt-4 pb-2">
+        <div className="progress-bar h-2">
           <div 
-            className="bg-primary h-2 rounded-full transition-all duration-300"
+            className="progress-fill bg-gradient-to-r from-primary to-primary-500"
             style={{ width: `${Math.min((step / (5 + Math.max(aiQuestions.length, 0))) * 100, 100)}%` }}
           />
         </div>
       </div>
 
       {/* Step Content */}
-      <div className="flex-grow px-4 py-6">
+      <main className="flex-grow px-5 py-6 pb-24">
         {/* Step 1: Mood */}
         {step === 1 && (
-          <div>
-            <h1 className="text-slate-800 dark:text-white text-2xl font-bold leading-tight mb-6 text-center">
+          <div className="animate-fade-in">
+            <h1 className="text-text-light-primary dark:text-text-dark-primary text-2xl font-bold leading-tight mb-8 text-center">
               Wie fühlst du dich heute?
             </h1>
             <div className="flex flex-col gap-3">
@@ -674,14 +694,14 @@ const Journal = () => {
                 <button
                   key={moodOption.value}
                   onClick={() => setMood(moodOption.value)}
-                  className={`flex h-16 shrink-0 cursor-pointer items-center justify-center gap-x-3 rounded-xl p-4 ${
+                  className={`card-hover flex h-16 shrink-0 cursor-pointer items-center justify-center gap-x-4 p-4 transition-all ${
                     mood === moodOption.value 
-                      ? 'bg-slate-200 dark:bg-slate-800 ring-2 ring-primary' 
-                      : 'bg-slate-100 dark:bg-slate-900'
+                      ? 'ring-2 ring-primary bg-primary/10 dark:bg-primary/20' 
+                      : ''
                   }`}
                 >
-                  <span className="text-3xl">{moodOption.emoji}</span>
-                  <p className="text-slate-800 dark:text-slate-200 text-lg font-medium leading-normal">
+                  <span className="text-4xl">{moodOption.emoji}</span>
+                  <p className="text-text-light-primary dark:text-text-dark-primary text-lg font-semibold leading-normal">
                     {moodOption.label}
                   </p>
                 </button>
@@ -692,35 +712,37 @@ const Journal = () => {
 
         {/* Step 2: Habits */}
         {step === 2 && (
-          <div>
-            <h1 className="text-slate-800 dark:text-white text-2xl font-bold leading-tight mb-6 text-center">
+          <div className="animate-fade-in">
+            <h1 className="text-text-light-primary dark:text-text-dark-primary text-2xl font-bold leading-tight mb-8 text-center">
               Welche Gewohnheiten hast du heute ausgeübt?
             </h1>
             {habits.length === 0 ? (
-              <p className="text-slate-600 dark:text-slate-400 text-center py-8">
-                Du hast noch keine aktiven Gewohnheiten. Du kannst diese Auswahl überspringen.
-              </p>
+              <div className="card text-center py-8">
+                <p className="text-text-light-secondary dark:text-text-dark-secondary">
+                  Du hast noch keine aktiven Gewohnheiten. Du kannst diese Auswahl überspringen.
+                </p>
+              </div>
             ) : (
               <div className="space-y-3">
                 {habits.map((habit) => (
                   <label
                     key={habit.id}
-                    className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-colors ${
+                    className={`card-hover flex items-center gap-3 p-4 cursor-pointer transition-all ${
                       selectedHabits.includes(habit.id)
-                        ? 'border-primary bg-primary/10'
-                        : 'border-slate-300 dark:border-slate-700'
+                        ? 'ring-2 ring-primary bg-primary/10 dark:bg-primary/20'
+                        : ''
                     }`}
                   >
                     <input
                       type="checkbox"
                       checked={selectedHabits.includes(habit.id)}
                       onChange={() => handleHabitToggle(habit.id)}
-                      className="w-5 h-5 rounded text-primary"
+                      className="w-5 h-5 rounded-lg border-2 border-border-light dark:border-border-dark bg-transparent text-primary checked:bg-primary checked:border-primary focus:ring-primary/50 focus:ring-2 cursor-pointer"
                     />
                     <div className="flex-1">
-                      <p className="text-slate-800 dark:text-white font-medium">{habit.name}</p>
+                      <p className="text-text-light-primary dark:text-text-dark-primary font-semibold">{habit.name}</p>
                       {habit.description && (
-                        <p className="text-slate-600 dark:text-slate-400 text-sm">{habit.description}</p>
+                        <p className="text-text-light-secondary dark:text-text-dark-secondary text-sm mt-1">{habit.description}</p>
                       )}
                     </div>
                   </label>
@@ -732,8 +754,8 @@ const Journal = () => {
 
         {/* Step 3: Tasks */}
         {step === 3 && (
-          <div>
-            <h1 className="text-slate-800 dark:text-white text-2xl font-bold leading-tight mb-6 text-center">
+          <div className="animate-fade-in">
+            <h1 className="text-text-light-primary dark:text-text-dark-primary text-2xl font-bold leading-tight mb-8 text-center">
               Welche Aufgaben konntest du heute erledigen?
             </h1>
             {tasks.length > 0 && (
@@ -741,10 +763,10 @@ const Journal = () => {
                 {tasks.map((task) => (
                   <label
                     key={task.id}
-                    className={`flex items-center gap-3 p-4 rounded-xl border cursor-pointer transition-colors ${
+                    className={`card-hover flex items-center gap-3 p-4 cursor-pointer transition-all ${
                       selectedTasks.includes(task.id)
-                        ? 'border-primary bg-primary/10'
-                        : 'border-slate-300 dark:border-slate-700'
+                        ? 'ring-2 ring-primary bg-primary/10 dark:bg-primary/20'
+                        : ''
                     }`}
                   >
                     <input
@@ -771,7 +793,7 @@ const Journal = () => {
                   value={task}
                   onChange={(e) => handleAdditionalTaskChange(index, e.target.value)}
                   placeholder={`Aufgabe ${index + 1}`}
-                  className="w-full p-3 border border-slate-300 dark:border-slate-700 rounded-xl bg-transparent text-slate-800 dark:text-white focus:ring-2 focus:ring-primary focus:outline-0 mb-2"
+                  className="input mb-2"
                 />
               ))}
               <button
@@ -787,8 +809,8 @@ const Journal = () => {
 
         {/* Step 4: Appreciations */}
         {step === 4 && (
-          <div>
-            <h1 className="text-slate-800 dark:text-white text-2xl font-bold leading-tight mb-6 text-center">
+          <div className="animate-fade-in">
+            <h1 className="text-text-light-primary dark:text-text-dark-primary text-2xl font-bold leading-tight mb-8 text-center">
               Nenne 3 Dinge, die du heute besonders wertgeschätzt hast
             </h1>
             <div className="space-y-4">
@@ -799,7 +821,7 @@ const Journal = () => {
                   value={appreciation}
                   onChange={(e) => handleAppreciationChange(index, e.target.value)}
                   placeholder={`Wertschätzung ${index + 1}`}
-                  className="w-full p-4 border border-slate-300 dark:border-slate-700 rounded-xl bg-transparent text-slate-800 dark:text-white focus:ring-2 focus:ring-primary focus:outline-0 text-lg"
+                  className="input text-base"
                 />
               ))}
             </div>
@@ -808,8 +830,8 @@ const Journal = () => {
 
         {/* Step 5: Improvements */}
         {step === 5 && (
-          <div>
-            <h1 className="text-slate-800 dark:text-white text-2xl font-bold leading-tight mb-6 text-center">
+          <div className="animate-fade-in">
+            <h1 className="text-text-light-primary dark:text-text-dark-primary text-2xl font-bold leading-tight mb-8 text-center">
               Nenne mindestens eine Sache, die du das nächste Mal verbessern willst
             </h1>
             <div className="space-y-4">
@@ -838,16 +860,16 @@ const Journal = () => {
 
         {/* Step 6-8: AI Generated Questions */}
         {step > 5 && step <= 5 + Math.max(aiQuestions.length, 0) && aiQuestions.length > 0 && (
-          <div>
+          <div className="animate-fade-in">
             {console.log('Rendering AI question step:', step, 'aiQuestions:', aiQuestions, 'question index:', step - 6, 'current question:', aiQuestions[step - 6])}
-            <h1 className="text-slate-800 dark:text-white text-2xl font-bold leading-tight mb-6 text-center">
+            <h1 className="text-text-light-primary dark:text-text-dark-primary text-2xl font-bold leading-tight mb-8 text-center">
               {aiQuestions[step - 6]?.question || (typeof aiQuestions[step - 6] === 'string' ? aiQuestions[step - 6] : 'Reflexionsfrage')}
             </h1>
             <textarea
               value={aiAnswers[step - 6] || ''}
               onChange={(e) => handleAIAnswerChange(step - 6, e.target.value)}
               placeholder="Deine Antwort..."
-              className="w-full p-4 border border-slate-300 dark:border-slate-700 rounded-xl bg-transparent text-slate-800 dark:text-white focus:ring-2 focus:ring-primary focus:outline-0 min-h-48 text-lg"
+              className="input min-h-48 text-base resize-none"
             />
           </div>
         )}
@@ -868,12 +890,12 @@ const Journal = () => {
         {(step === 5 && isGeneratingQuestions) || (step === 6 && isGeneratingQuestions) ? (
           <div className="flex flex-col items-center justify-center py-12">
             <span className="material-symbols-outlined text-primary text-6xl animate-spin mb-4">refresh</span>
-            <p className="text-slate-600 dark:text-slate-400 text-center">
+            <p className="text-text-light-secondary dark:text-text-dark-secondary text-center">
               Generiere passende Reflexionsfragen...
             </p>
           </div>
         ) : null}
-      </div>
+      </main>
 
       {/* Bottom Navigation */}
       <div className="sticky bottom-0 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-sm p-4 border-t border-slate-200 dark:border-slate-800">

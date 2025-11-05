@@ -168,19 +168,24 @@ const TodoList = () => {
   }
 
   return (
-    <div className="relative flex h-auto min-h-screen w-full flex-col bg-background-light dark:bg-background-dark group/design-root overflow-x-hidden pb-24">
+    <div className="relative flex h-auto min-h-screen w-full flex-col mx-auto max-w-lg bg-background-light dark:bg-background-dark group/design-root overflow-x-hidden pb-24">
       {/* Top App Bar */}
-      <div className="flex items-center p-4 pb-2 justify-between sticky top-0 bg-background-light dark:bg-background-dark z-10">
-        <div className="flex size-12 shrink-0 items-center justify-start">
-          <span className="material-symbols-outlined text-gray-700 dark:text-gray-300">menu</span>
+      <header className="flex items-center p-5 pt-6 pb-4 justify-between glass sticky top-0 z-10 border-b border-border-light dark:border-border-dark backdrop-blur-xl">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary-600 shadow-md">
+            <span className="material-symbols-outlined text-white text-xl">checklist</span>
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-text-light-primary dark:text-text-dark-primary leading-tight tracking-[-0.015em]">Meine Aufgaben</h1>
+            <p className="text-text-light-secondary dark:text-text-dark-secondary text-xs">Aufgaben verwalten</p>
+          </div>
         </div>
-        <h2 className="text-lg font-bold leading-tight tracking-[-0.015em] flex-1 text-center text-gray-900 dark:text-white">Meine Aufgaben</h2>
-        <div className="flex w-12 items-center justify-end">
-          <button className="flex max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-xl h-12 bg-transparent text-gray-700 dark:text-gray-300 gap-2 text-base font-bold leading-normal tracking-[0.015em] min-w-0 p-0">
-            <span className="material-symbols-outlined">more_vert</span>
+        <div className="flex items-center justify-end">
+          <button className="flex cursor-pointer items-center justify-center rounded-xl h-10 w-10 text-text-light-secondary dark:text-text-dark-secondary hover:bg-background-light dark:hover:bg-background-dark transition-colors">
+            <span className="material-symbols-outlined text-xl">more_vert</span>
           </button>
         </div>
-      </div>
+      </header>
 
       {/* Chips for Filtering */}
       <div className="flex gap-3 px-4 py-2 overflow-x-auto whitespace-nowrap">

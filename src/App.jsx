@@ -6,6 +6,7 @@ import HabitTracker from './components/HabitTracker'
 import AICoach from './components/AICoach'
 import TodoList from './components/TodoList'
 import Journal from './components/Journal'
+import Team from './components/Team'
 import AuthPage from './components/AuthPage'
 import BottomNavigation from './components/BottomNavigation'
 
@@ -55,6 +56,7 @@ function AppContent() {
         <Route path="/coach" element={<AICoach />} />
         <Route path="/todos" element={<TodoList />} />
         <Route path="/journal" element={<Journal />} />
+        <Route path="/team" element={<Team />} />
       </Routes>
       
       {/* Bottom Navigation Bar - visible on all authenticated pages */}

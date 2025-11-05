@@ -32,79 +32,85 @@ const LoginForm = ({ onToggleMode }) => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background-light dark:bg-background-dark">
-      <div className="max-w-md w-full space-y-8 p-8">
-        <div className="text-center">
-          <span className="material-symbols-outlined text-primary text-6xl mb-4">partly_cloudy_day</span>
-          <h2 className="text-3xl font-bold text-text-light-primary dark:text-text-dark-primary">
-            Willkommen zurück
-          </h2>
-          <p className="mt-2 text-text-light-secondary dark:text-text-dark-secondary">
-            Melde dich in deinem Konto an
-          </p>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background-light via-primary-50/30 to-background-light dark:from-background-dark dark:via-primary-950/20 dark:to-background-dark p-4">
+      <div className="max-w-md w-full space-y-8 animate-fade-in">
+        <div className="card p-8 shadow-xl">
+          <div className="text-center mb-8">
+            <div className="flex items-center justify-center mb-6">
+              <div className="flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-primary to-primary-600 shadow-lg">
+                <span className="material-symbols-outlined text-white text-4xl">partly_cloudy_day</span>
+              </div>
+            </div>
+            <h2 className="text-3xl font-bold text-text-light-primary dark:text-text-dark-primary mb-2">
+              Willkommen zurück
+            </h2>
+            <p className="text-text-light-secondary dark:text-text-dark-secondary">
+              Melde dich in deinem Konto an
+            </p>
+          </div>
+
+          <form className="space-y-6" onSubmit={handleSubmit}>
+            {error && (
+              <div className="bg-error/10 dark:bg-error/20 border border-error/30 text-error dark:text-error px-4 py-3 rounded-xl text-sm animate-slide-down">
+                {error}
+              </div>
+            )}
+
+            <div className="space-y-5">
+              <div>
+                <label htmlFor="email" className="block text-sm font-semibold text-text-light-primary dark:text-text-dark-primary mb-2">
+                  E-Mail-Adresse
+                </label>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  required
+                  value={formData.email}
+                  onChange={handleChange}
+                  className="input"
+                  placeholder="deine@email.com"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="password" className="block text-sm font-semibold text-text-light-primary dark:text-text-dark-primary mb-2">
+                  Passwort
+                </label>
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  required
+                  value={formData.password}
+                  onChange={handleChange}
+                  className="input"
+                  placeholder="Dein Passwort"
+                />
+              </div>
+            </div>
+
+            <div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-primary w-full py-3 text-base"
+              >
+                {loading ? 'Wird angemeldet...' : 'Anmelden'}
+              </button>
+            </div>
+
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={onToggleMode}
+                className="text-primary hover:text-primary-600 dark:hover:text-primary-400 text-sm font-medium transition-colors"
+              >
+                Noch kein Konto? <span className="font-semibold">Jetzt registrieren</span>
+              </button>
+            </div>
+          </form>
         </div>
-
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          {error && (
-            <div className="bg-red-100 dark:bg-red-900/20 border border-red-400 text-red-700 dark:text-red-300 px-4 py-3 rounded">
-              {error}
-            </div>
-          )}
-
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-text-light-primary dark:text-text-dark-primary">
-                E-Mail-Adresse
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                required
-                value={formData.email}
-                onChange={handleChange}
-                className="mt-1 block w-full px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-card-light dark:bg-card-dark text-text-light-primary dark:text-text-dark-primary focus:ring-primary focus:border-primary"
-                placeholder="deine@email.com"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-text-light-primary dark:text-text-dark-primary">
-                Passwort
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                required
-                value={formData.password}
-                onChange={handleChange}
-                className="mt-1 block w-full px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-card-light dark:bg-card-dark text-text-light-primary dark:text-text-dark-primary focus:ring-primary focus:border-primary"
-                placeholder="Dein Passwort"
-              />
-            </div>
-          </div>
-
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50"
-            >
-              {loading ? 'Wird angemeldet...' : 'Anmelden'}
-            </button>
-          </div>
-
-          <div className="text-center">
-            <button
-              type="button"
-              onClick={onToggleMode}
-              className="text-primary hover:text-primary/80 text-sm font-medium"
-            >
-              Noch kein Konto? Jetzt registrieren
-            </button>
-          </div>
-        </form>
       </div>
     </div>
   )
@@ -158,111 +164,117 @@ const RegisterForm = ({ onToggleMode }) => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background-light dark:bg-background-dark">
-      <div className="max-w-md w-full space-y-8 p-8">
-        <div className="text-center">
-          <span className="material-symbols-outlined text-primary text-6xl mb-4">partly_cloudy_day</span>
-          <h2 className="text-3xl font-bold text-text-light-primary dark:text-text-dark-primary">
-            Konto erstellen
-          </h2>
-          <p className="mt-2 text-text-light-secondary dark:text-text-dark-secondary">
-            Starte deine Reise zu besseren Gewohnheiten
-          </p>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background-light via-primary-50/30 to-background-light dark:from-background-dark dark:via-primary-950/20 dark:to-background-dark p-4">
+      <div className="max-w-md w-full space-y-8 animate-fade-in">
+        <div className="card p-8 shadow-xl">
+          <div className="text-center mb-8">
+            <div className="flex items-center justify-center mb-6">
+              <div className="flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-primary to-primary-600 shadow-lg">
+                <span className="material-symbols-outlined text-white text-4xl">partly_cloudy_day</span>
+              </div>
+            </div>
+            <h2 className="text-3xl font-bold text-text-light-primary dark:text-text-dark-primary mb-2">
+              Konto erstellen
+            </h2>
+            <p className="text-text-light-secondary dark:text-text-dark-secondary">
+              Starte deine Reise zu besseren Gewohnheiten
+            </p>
+          </div>
+
+          <form className="space-y-6" onSubmit={handleSubmit}>
+            {error && (
+              <div className="bg-error/10 dark:bg-error/20 border border-error/30 text-error dark:text-error px-4 py-3 rounded-xl text-sm animate-slide-down">
+                {error}
+              </div>
+            )}
+
+            <div className="space-y-5">
+              <div>
+                <label htmlFor="name" className="block text-sm font-semibold text-text-light-primary dark:text-text-dark-primary mb-2">
+                  Name
+                </label>
+                <input
+                  id="name"
+                  name="name"
+                  type="text"
+                  required
+                  value={formData.name}
+                  onChange={handleChange}
+                  className="input"
+                  placeholder="Dein Name"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="email" className="block text-sm font-semibold text-text-light-primary dark:text-text-dark-primary mb-2">
+                  E-Mail-Adresse
+                </label>
+                <input
+                  id="email"
+                  name="email"
+                  type="email"
+                  required
+                  value={formData.email}
+                  onChange={handleChange}
+                  className="input"
+                  placeholder="deine@email.com"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="password" className="block text-sm font-semibold text-text-light-primary dark:text-text-dark-primary mb-2">
+                  Passwort
+                </label>
+                <input
+                  id="password"
+                  name="password"
+                  type="password"
+                  required
+                  value={formData.password}
+                  onChange={handleChange}
+                  className="input"
+                  placeholder="Mindestens 6 Zeichen"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="confirmPassword" className="block text-sm font-semibold text-text-light-primary dark:text-text-dark-primary mb-2">
+                  Passwort bestätigen
+                </label>
+                <input
+                  id="confirmPassword"
+                  name="confirmPassword"
+                  type="password"
+                  required
+                  value={formData.confirmPassword}
+                  onChange={handleChange}
+                  className="input"
+                  placeholder="Passwort wiederholen"
+                />
+              </div>
+            </div>
+
+            <div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="btn-primary w-full py-3 text-base"
+              >
+                {loading ? 'Wird erstellt...' : 'Konto erstellen'}
+              </button>
+            </div>
+
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={onToggleMode}
+                className="text-primary hover:text-primary-600 dark:hover:text-primary-400 text-sm font-medium transition-colors"
+              >
+                Bereits ein Konto? <span className="font-semibold">Jetzt anmelden</span>
+              </button>
+            </div>
+          </form>
         </div>
-
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          {error && (
-            <div className="bg-red-100 dark:bg-red-900/20 border border-red-400 text-red-700 dark:text-red-300 px-4 py-3 rounded">
-              {error}
-            </div>
-          )}
-
-          <div className="space-y-4">
-            <div>
-              <label htmlFor="name" className="block text-sm font-medium text-text-light-primary dark:text-text-dark-primary">
-                Name
-              </label>
-              <input
-                id="name"
-                name="name"
-                type="text"
-                required
-                value={formData.name}
-                onChange={handleChange}
-                className="mt-1 block w-full px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-card-light dark:bg-card-dark text-text-light-primary dark:text-text-dark-primary focus:ring-primary focus:border-primary"
-                placeholder="Dein Name"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-text-light-primary dark:text-text-dark-primary">
-                E-Mail-Adresse
-              </label>
-              <input
-                id="email"
-                name="email"
-                type="email"
-                required
-                value={formData.email}
-                onChange={handleChange}
-                className="mt-1 block w-full px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-card-light dark:bg-card-dark text-text-light-primary dark:text-text-dark-primary focus:ring-primary focus:border-primary"
-                placeholder="deine@email.com"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-text-light-primary dark:text-text-dark-primary">
-                Passwort
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                required
-                value={formData.password}
-                onChange={handleChange}
-                className="mt-1 block w-full px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-card-light dark:bg-card-dark text-text-light-primary dark:text-text-dark-primary focus:ring-primary focus:border-primary"
-                placeholder="Mindestens 6 Zeichen"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-text-light-primary dark:text-text-dark-primary">
-                Passwort bestätigen
-              </label>
-              <input
-                id="confirmPassword"
-                name="confirmPassword"
-                type="password"
-                required
-                value={formData.confirmPassword}
-                onChange={handleChange}
-                className="mt-1 block w-full px-3 py-2 border border-border-light dark:border-border-dark rounded-lg bg-card-light dark:bg-card-dark text-text-light-primary dark:text-text-dark-primary focus:ring-primary focus:border-primary"
-                placeholder="Passwort wiederholen"
-              />
-            </div>
-          </div>
-
-          <div>
-            <button
-              type="submit"
-              disabled={loading}
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-primary hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50"
-            >
-              {loading ? 'Wird erstellt...' : 'Konto erstellen'}
-            </button>
-          </div>
-
-          <div className="text-center">
-            <button
-              type="button"
-              onClick={onToggleMode}
-              className="text-primary hover:text-primary/80 text-sm font-medium"
-            >
-              Bereits ein Konto? Jetzt anmelden
-            </button>
-          </div>
-        </form>
       </div>
     </div>
   )

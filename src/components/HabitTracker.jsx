@@ -179,20 +179,25 @@ const HabitTracker = () => {
   return (
     <div className="relative min-h-screen w-full flex flex-col mx-auto max-w-lg pb-24">
       {/* Top App Bar */}
-      <header className="flex items-center p-4 pb-2 justify-between sticky top-0 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-sm z-10">
-        <div className="flex size-12 shrink-0 items-center justify-start">
-          {/* Placeholder for a menu icon if needed */}
+      <header className="flex items-center p-5 pt-6 pb-4 justify-between glass sticky top-0 z-10 border-b border-border-light dark:border-border-dark backdrop-blur-xl">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary-600 shadow-md">
+            <span className="material-symbols-outlined text-white text-xl">flag</span>
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-text-light-primary dark:text-text-dark-primary leading-tight tracking-[-0.015em]">Meine Gewohnheiten</h1>
+            <p className="text-text-light-secondary dark:text-text-dark-secondary text-xs">Tägliche Gewohnheiten verfolgen</p>
+          </div>
         </div>
-        <h1 className="text-lg font-bold text-text-light-primary dark:text-text-dark-primary">Meine Gewohnheiten</h1>
-        <div className="flex w-12 items-center justify-end">
-          <button className="flex cursor-pointer items-center justify-center rounded-full h-10 w-10 text-text-light-primary dark:text-text-dark-primary">
-            <span className="material-symbols-outlined text-2xl">calendar_today</span>
+        <div className="flex items-center justify-end">
+          <button className="flex cursor-pointer items-center justify-center rounded-xl h-10 w-10 text-text-light-secondary dark:text-text-dark-secondary hover:bg-background-light dark:hover:bg-background-dark transition-colors">
+            <span className="material-symbols-outlined text-xl">calendar_today</span>
           </button>
         </div>
       </header>
 
       {/* Tabs */}
-      <nav className="px-4 border-b border-slate-200 dark:border-slate-700">
+      <nav className="px-5 border-b border-border-light dark:border-border-dark">
         <div className="flex justify-between">
           <button 
             onClick={() => setActiveTab('today')}

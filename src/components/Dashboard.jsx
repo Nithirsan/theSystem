@@ -256,7 +256,7 @@ const Dashboard = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background-light dark:bg-background-dark">
+      <div className="min-h-screen flex items-center justify-center mx-auto max-w-lg bg-background-light dark:bg-background-dark">
         <div className="text-center">
           <span className="material-symbols-outlined text-primary text-6xl animate-spin">refresh</span>
           <p className="mt-4 text-text-light-secondary dark:text-text-dark-secondary">Lade Dashboard...</p>
@@ -266,43 +266,53 @@ const Dashboard = () => {
   }
 
   return (
-    <div className="relative flex min-h-screen w-full flex-col group/design-root overflow-x-hidden pb-28">
+    <div className="relative flex min-h-screen w-full flex-col mx-auto max-w-lg group/design-root overflow-x-hidden pb-28">
       {/* Top App Bar */}
-      <header className="flex items-center p-4 pt-6 justify-between bg-background-light dark:bg-background-dark sticky top-0 z-10">
+      <header className="flex items-center p-5 pt-6 pb-4 justify-between glass sticky top-0 z-10 border-b border-border-light dark:border-border-dark backdrop-blur-xl">
         <div className="flex items-center gap-3">
-          <span className="material-symbols-outlined text-text-light-primary dark:text-text-dark-primary text-3xl">partly_cloudy_day</span>
-          <h1 className="text-text-light-primary dark:text-text-dark-primary text-xl font-bold leading-tight tracking-[-0.015em]">
-            Guten Morgen, {user?.name || 'User'}!
-          </h1>
+          <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary-600 shadow-md">
+            <span className="material-symbols-outlined text-white text-xl">partly_cloudy_day</span>
+          </div>
+          <div>
+            <h1 className="text-text-light-primary dark:text-text-dark-primary text-xl font-bold leading-tight tracking-[-0.015em]">
+              Guten Morgen, {user?.name || 'User'}!
+            </h1>
+            <p className="text-text-light-secondary dark:text-text-dark-secondary text-xs">Willkommen zurück</p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <button 
             onClick={logout}
-            className="text-text-light-secondary dark:text-text-dark-secondary text-sm"
+            className="text-text-light-secondary dark:text-text-dark-secondary text-sm hover:text-text-light-primary dark:hover:text-text-dark-primary transition-colors px-3 py-1.5 rounded-lg hover:bg-background-light dark:hover:bg-background-dark"
           >
             Abmelden
           </button>
-          <button className="flex max-w-[480px] cursor-pointer items-center justify-center overflow-hidden rounded-full h-10 w-10 bg-card-light dark:bg-card-dark text-text-light-primary dark:text-text-dark-primary shadow-sm">
-            <span className="material-symbols-outlined">person</span>
+          <button className="flex items-center justify-center rounded-full h-10 w-10 bg-gradient-to-br from-primary-100 to-primary-200 dark:from-primary-900 dark:to-primary-800 text-primary-600 dark:text-primary-400 shadow-sm hover:shadow-md transition-all">
+            <span className="material-symbols-outlined text-lg">person</span>
           </button>
         </div>
       </header>
 
-      <main className="flex flex-col gap-6 p-4">
+      <main className="flex flex-col gap-5 p-5">
         {/* Daily Progress Card */}
-        <div className="flex flex-col gap-3 p-5 bg-card-light dark:bg-card-dark rounded-xl shadow-sm">
-          <div className="flex gap-6 justify-between items-center">
-            <p className="text-text-light-primary dark:text-text-dark-primary text-base font-bold">Tagesfortschritt</p>
-            <p className="text-primary text-base font-bold">{progressPercentage}%</p>
+        <div className="card-hover animate-fade-in">
+          <div className="flex gap-6 justify-between items-center mb-4">
+            <div>
+              <p className="text-text-light-primary dark:text-text-dark-primary text-lg font-bold mb-1">Tagesfortschritt</p>
+              <p className="text-text-light-secondary dark:text-text-dark-secondary text-sm">Heute schon {completedItemsToday} von {totalItemsToday} erledigt</p>
+            </div>
+            <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-primary-600 shadow-lg">
+              <p className="text-white text-xl font-bold">{progressPercentage}%</p>
+            </div>
           </div>
-          <div className="rounded-full bg-background-light dark:bg-background-dark h-2.5">
-            <div className="h-2.5 rounded-full bg-primary" style={{width: `${progressPercentage}%`}}></div>
+          <div className="progress-bar h-3 mb-2">
+            <div className="progress-fill bg-gradient-to-r from-primary to-primary-500" style={{width: `${progressPercentage}%`}}></div>
           </div>
-          <p className="text-text-light-secondary dark:text-text-dark-secondary text-sm font-normal leading-normal">Du schaffst das!</p>
+          <p className="text-text-light-secondary dark:text-text-dark-secondary text-sm font-medium">Du schaffst das! 💪</p>
         </div>
 
         {/* Calendar Card */}
-        <div className="flex flex-col gap-3 bg-card-light dark:bg-card-dark rounded-xl p-5 shadow-sm">
+        <div className="card-hover animate-fade-in">
           <div className="flex items-center justify-between">
             <h3 className="text-text-light-primary dark:text-text-dark-primary text-lg font-bold leading-tight tracking-[-0.015em]">Kalender</h3>
             <div className="flex items-center gap-2">
@@ -431,17 +441,17 @@ const Dashboard = () => {
             <>
               {/* Selected Day Todo Button */}
               <div className="flex items-center justify-center">
-                <button
-                  onClick={() => setShowTaskModal(true)}
-                  className="flex items-center justify-center gap-2 px-6 py-3 bg-primary text-white font-medium rounded-full shadow-lg hover:bg-primary/90 transition-all duration-200"
-                >
-                  <span className="material-symbols-outlined">add</span>
-                  <span>Todo für {formatDateForDisplay(selectedDate)} erstellen</span>
-                </button>
+              <button
+                onClick={() => setShowTaskModal(true)}
+                className="btn-primary flex items-center justify-center gap-2 px-6 py-3 rounded-full shadow-lg"
+              >
+                <span className="material-symbols-outlined">add</span>
+                <span>Todo für {formatDateForDisplay(selectedDate)} erstellen</span>
+              </button>
               </div>
 
               {/* Tasks for Selected Day */}
-              <div className="flex flex-col gap-2 bg-card-light dark:bg-card-dark rounded-xl p-5 shadow-sm">
+              <div className="card-hover animate-fade-in">
                 <div className="flex items-center justify-between pb-2">
                   <h3 className="text-text-light-primary dark:text-text-dark-primary text-lg font-bold leading-tight tracking-[-0.015em]">
                     Aufgaben für {formatDateForDisplay(selectedDate)}
@@ -662,8 +672,8 @@ const Dashboard = () => {
         )}
 
         {/* Today's Habits Card */}
-        <div className="flex flex-col gap-2 bg-card-light dark:bg-card-dark rounded-xl p-5 shadow-sm">
-          <h3 className="text-text-light-primary dark:text-text-dark-primary text-lg font-bold leading-tight tracking-[-0.015em] pb-2">Heutige Gewohnheiten</h3>
+        <div className="card-hover animate-fade-in">
+          <h3 className="text-text-light-primary dark:text-text-dark-primary text-lg font-bold leading-tight tracking-[-0.015em] mb-4">Heutige Gewohnheiten</h3>
           <div className="divide-y divide-border-light dark:divide-border-dark">
             {(habits || []).slice(0, 3).map(habit => (
               <div key={habit.id} className="flex gap-x-4 py-3.5 items-center justify-between">
@@ -693,10 +703,10 @@ const Dashboard = () => {
         </div>
 
         {/* Today's To-Dos Card */}
-        <div className="flex flex-col gap-2 bg-card-light dark:bg-card-dark rounded-xl p-5 shadow-sm">
-          <div className="flex items-center justify-between pb-2">
+        <div className="card-hover animate-fade-in">
+          <div className="flex items-center justify-between mb-4">
             <h3 className="text-text-light-primary dark:text-text-dark-primary text-lg font-bold leading-tight tracking-[-0.015em]">Heutige Aufgaben</h3>
-            <Link to="/todos" className="text-primary text-sm font-bold">Alle ansehen</Link>
+            <Link to="/todos" className="text-primary text-sm font-semibold hover:text-primary-600 transition-colors">Alle ansehen →</Link>
           </div>
           <div className="divide-y divide-border-light dark:divide-border-dark">
             {todayTasks.slice(0, 3).map(task => (
@@ -721,10 +731,10 @@ const Dashboard = () => {
         </div>
 
         {/* Active Goals Card */}
-        <div className="flex flex-col gap-4 bg-card-light dark:bg-card-dark rounded-xl p-5 shadow-sm">
-          <div className="flex items-center justify-between">
+        <div className="card-hover animate-fade-in">
+          <div className="flex items-center justify-between mb-4">
             <h3 className="text-text-light-primary dark:text-text-dark-primary text-lg font-bold leading-tight tracking-[-0.015em]">Zielfokus</h3>
-            <Link to="/habits" className="text-primary text-sm font-bold">Details</Link>
+            <Link to="/habits" className="text-primary text-sm font-semibold hover:text-primary-600 transition-colors">Details →</Link>
           </div>
           <div className="flex flex-col gap-4">
             {(habits || []).slice(0, 2).map(habit => (
