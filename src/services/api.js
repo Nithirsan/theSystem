@@ -556,3 +556,640 @@ export const authUtils = {
     return user ? JSON.parse(user) : null;
   },
 };
+
+// API Service for Notes/Plans
+export const notesAPI = {
+  // Get all notes
+  getNotes: async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/notes`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    // Read response as text first (can only be read once)
+    const responseText = await response.text();
+    
+    if (!response.ok) {
+      let errorData;
+      try {
+        errorData = JSON.parse(responseText);
+      } catch (e) {
+        errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
+      }
+      throw new Error(errorData.error || 'Failed to fetch notes');
+    }
+    
+    // Parse successful response
+    if (!responseText || responseText.trim() === '') {
+      return [];
+    }
+    
+    try {
+      return JSON.parse(responseText);
+    } catch (e) {
+      console.error('JSON parse error:', e);
+      console.error('Response text:', responseText);
+      throw new Error(`Invalid JSON response from server: ${responseText.substring(0, 100)}`);
+    }
+  },
+
+  // Create a new note
+  createNote: async (noteData) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/notes`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(noteData),
+    });
+    
+    // Read response as text first (can only be read once)
+    const responseText = await response.text();
+    
+    if (!response.ok) {
+      let errorData;
+      try {
+        errorData = JSON.parse(responseText);
+      } catch (e) {
+        errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
+      }
+      throw new Error(errorData.error || 'Failed to create note');
+    }
+    
+    // Parse successful response
+    if (!responseText || responseText.trim() === '') {
+      // Empty response - return empty object
+      return {};
+    }
+    
+    try {
+      return JSON.parse(responseText);
+    } catch (e) {
+      console.error('JSON parse error:', e);
+      console.error('Response text:', responseText);
+      console.error('Response status:', response.status);
+      throw new Error(`Invalid JSON response from server: ${responseText.substring(0, 100)}`);
+    }
+  },
+
+  // Update a note
+  updateNote: async (noteId, noteData) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/notes/${noteId}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(noteData),
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to update note');
+    }
+    
+    return response.json();
+  },
+
+  // Delete a note
+  deleteNote: async (noteId) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/notes/${noteId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to delete note');
+    }
+    
+    return response.json();
+  },
+
+  // Create a checklist item
+  createChecklistItem: async (noteId, itemData) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/notes/${noteId}/checklist`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(itemData),
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to create checklist item');
+    }
+    
+    return response.json();
+  },
+
+  // Update a checklist item
+  updateChecklistItem: async (noteId, itemId, itemData) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/notes/${noteId}/checklist/${itemId}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(itemData),
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to update checklist item');
+    }
+    
+    return response.json();
+  },
+
+  // Delete a checklist item
+  deleteChecklistItem: async (noteId, itemId) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/notes/${noteId}/checklist/${itemId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to delete checklist item');
+    }
+    
+    return response.json();
+  },
+
+  // Get plan data for a note
+  getPlanData: async (noteId) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/notes/${noteId}/plan`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    const responseText = await response.text();
+    
+    if (!response.ok) {
+      let errorData;
+      try {
+        errorData = JSON.parse(responseText);
+      } catch (e) {
+        errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
+      }
+      throw new Error(errorData.error || 'Failed to fetch plan data');
+    }
+    
+    if (!responseText || responseText.trim() === '') {
+      return null;
+    }
+    
+    try {
+      return JSON.parse(responseText);
+    } catch (e) {
+      console.error('JSON parse error:', e);
+      throw new Error(`Invalid JSON response from server`);
+    }
+  },
+
+  // Save plan answers and generate plan
+  savePlanAnswers: async (noteId, answers) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/notes/${noteId}/plan/answers`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(answers),
+    });
+    
+    const responseText = await response.text();
+    
+    if (!response.ok) {
+      let errorData;
+      try {
+        errorData = JSON.parse(responseText);
+      } catch (e) {
+        errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
+      }
+      throw new Error(errorData.error || 'Failed to save plan answers');
+    }
+    
+    if (!responseText || responseText.trim() === '') {
+      return null;
+    }
+    
+    try {
+      return JSON.parse(responseText);
+    } catch (e) {
+      console.error('JSON parse error:', e);
+      throw new Error(`Invalid JSON response from server`);
+    }
+  },
+
+  // Update plan via chat
+  updatePlanViaChat: async (noteId, message) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/notes/${noteId}/plan/chat`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ message }),
+    });
+    
+    const responseText = await response.text();
+    
+    if (!response.ok) {
+      let errorData;
+      try {
+        errorData = JSON.parse(responseText);
+      } catch (e) {
+        errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
+      }
+      throw new Error(errorData.error || 'Failed to update plan via chat');
+    }
+    
+    if (!responseText || responseText.trim() === '') {
+      return null;
+    }
+    
+    try {
+      return JSON.parse(responseText);
+    } catch (e) {
+      console.error('JSON parse error:', e);
+      throw new Error(`Invalid JSON response from server`);
+    }
+  },
+
+  // Adopt plan into note content
+  adoptPlan: async (noteId) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/notes/${noteId}/plan/adopt`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    const responseText = await response.text();
+    
+    if (!response.ok) {
+      let errorData;
+      try {
+        errorData = JSON.parse(responseText);
+      } catch (e) {
+        errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
+      }
+      throw new Error(errorData.error || 'Failed to adopt plan');
+    }
+    
+    if (!responseText || responseText.trim() === '') {
+      return null;
+    }
+    
+    try {
+      return JSON.parse(responseText);
+    } catch (e) {
+      console.error('JSON parse error:', e);
+      throw new Error(`Invalid JSON response from server`);
+    }
+  },
+
+  // Generate checklist from plan
+  generateChecklist: async (noteId) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/notes/${noteId}/plan/generate-checklist`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    const responseText = await response.text();
+    
+    if (!response.ok) {
+      let errorData;
+      try {
+        errorData = JSON.parse(responseText);
+      } catch (e) {
+        errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
+      }
+      throw new Error(errorData.error || 'Failed to generate checklist');
+    }
+    
+    if (!responseText || responseText.trim() === '') {
+      return null;
+    }
+    
+    try {
+      return JSON.parse(responseText);
+    } catch (e) {
+      console.error('JSON parse error:', e);
+      throw new Error(`Invalid JSON response from server`);
+    }
+  },
+
+  // Upload media file
+  uploadMedia: async (noteId, file, fileType) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('file_type', fileType);
+
+    const response = await fetch(`${API_BASE_URL}/notes/${noteId}/media`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+      },
+      body: formData,
+    });
+    
+    const responseText = await response.text();
+    
+    if (!response.ok) {
+      let errorData;
+      try {
+        errorData = JSON.parse(responseText);
+      } catch (e) {
+        errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
+      }
+      throw new Error(errorData.error || 'Failed to upload media');
+    }
+    
+    if (!responseText || responseText.trim() === '') {
+      return null;
+    }
+    
+    try {
+      return JSON.parse(responseText);
+    } catch (e) {
+      console.error('JSON parse error:', e);
+      throw new Error(`Invalid JSON response from server`);
+    }
+  },
+
+  // Get media attachments for a note
+  getMediaAttachments: async (noteId) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/notes/${noteId}/media`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    const responseText = await response.text();
+    
+    if (!response.ok) {
+      let errorData;
+      try {
+        errorData = JSON.parse(responseText);
+      } catch (e) {
+        errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
+      }
+      throw new Error(errorData.error || 'Failed to fetch media attachments');
+    }
+    
+    if (!responseText || responseText.trim() === '') {
+      return [];
+    }
+    
+    try {
+      return JSON.parse(responseText);
+    } catch (e) {
+      console.error('JSON parse error:', e);
+      throw new Error(`Invalid JSON response from server`);
+    }
+  },
+
+  // Delete media attachment
+  deleteMediaAttachment: async (noteId, attachmentId) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/notes/${noteId}/media/${attachmentId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    const responseText = await response.text();
+    
+    if (!response.ok) {
+      let errorData;
+      try {
+        errorData = JSON.parse(responseText);
+      } catch (e) {
+        errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
+      }
+      throw new Error(errorData.error || 'Failed to delete media attachment');
+    }
+    
+    return { success: true };
+  },
+};
+
+// API Service for Meditation/Reflection
+export const meditationAPI = {
+  // Get all meditation sessions
+  getSessions: async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/meditation`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to fetch meditation sessions');
+    }
+    
+    return response.json();
+  },
+
+  // Start a new meditation session
+  startMeditation: async (data) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/meditation`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to start meditation');
+    }
+    
+    return response.json();
+  },
+
+  // Get a specific meditation session
+  getSession: async (sessionId) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/meditation/${sessionId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to fetch meditation session');
+    }
+    
+    return response.json();
+  },
+
+  // Send a message in meditation session
+  sendMessage: async (sessionId, data) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/meditation/${sessionId}/message`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to send message');
+    }
+    
+    return response.json();
+  },
+
+  // End meditation session
+  endMeditation: async (sessionId) => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No token found');
+    }
+
+    const response = await fetch(`${API_BASE_URL}/meditation/${sessionId}/end`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Failed to end meditation');
+    }
+    
+    return response.json();
+  },
+};

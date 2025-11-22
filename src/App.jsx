@@ -7,6 +7,8 @@ import AICoach from './components/AICoach'
 import TodoList from './components/TodoList'
 import Journal from './components/Journal'
 import Team from './components/Team'
+import Plan from './components/Plan'
+import Reflektion from './components/Reflektion'
 import AuthPage from './components/AuthPage'
 import BottomNavigation from './components/BottomNavigation'
 
@@ -57,6 +59,8 @@ function AppContent() {
         <Route path="/todos" element={<TodoList />} />
         <Route path="/journal" element={<Journal />} />
         <Route path="/team" element={<Team />} />
+        <Route path="/plan" element={<Plan />} />
+        <Route path="/reflektion" element={<Reflektion />} />
       </Routes>
       
       {/* Bottom Navigation Bar - visible on all authenticated pages */}

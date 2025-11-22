@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -1387,7 +1390,8 @@ func (h *ChatHandler) GetChatSessions(c *gin.Context) {
 		ORDER BY updated_at DESC
 	`, userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch chat sessions"})
+		log.Printf("Failed to fetch chat sessions: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch chat sessions", "details": err.Error()})
 		return
 	}
 	defer rows.Close()
@@ -1423,7 +1427,8 @@ func (h *ChatHandler) CreateChatSession(c *gin.Context) {
 		VALUES (?, ?)
 	`, userID, req.Title)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create chat session"})
+		log.Printf("Failed to create chat session: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create chat session", "details": err.Error()})
 		return
 	}
 
@@ -1622,4 +1627,1962 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, response)
+}
+
+// NoteHandler handles note/plan endpoints
+type NoteHandler struct{}
+
+// NewNoteHandler creates a new note handler
+func NewNoteHandler() *NoteHandler {
+	return &NoteHandler{}
+}
+
+// GetNotes returns all notes for the authenticated user
+func (h *NoteHandler) GetNotes(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+
+	rows, err := database.DB.Query(`
+		SELECT id, user_id, title, content, color, is_pinned, created_at, updated_at
+		FROM notes WHERE user_id = ?
+		ORDER BY is_pinned DESC, updated_at DESC
+	`, userID)
+	if err != nil {
+		log.Printf("Failed to query notes for user %v: %v", userID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch notes"})
+		return
+	}
+	defer rows.Close()
+
+	var notes []models.Note
+	for rows.Next() {
+		var note models.Note
+		err := rows.Scan(&note.ID, &note.UserID, &note.Title, &note.Content, &note.Color, &note.IsPinned, &note.CreatedAt, &note.UpdatedAt)
+		if err != nil {
+			log.Printf("Failed to scan note: %v", err)
+			continue
+		}
+		notes = append(notes, note)
+	}
+
+	// Get checklist items for all notes at once (more efficient)
+	noteIDs := make([]int, len(notes))
+	for i, note := range notes {
+		noteIDs[i] = note.ID
+	}
+
+	checklistMap := make(map[int][]models.ChecklistItem)
+	if len(noteIDs) > 0 {
+		placeholders := strings.Repeat("?,", len(noteIDs))
+		placeholders = placeholders[:len(placeholders)-1]
+		
+		checklistRows, err := database.DB.Query(fmt.Sprintf(`
+			SELECT id, note_id, text, is_checked, position, created_at, updated_at
+			FROM checklist_items WHERE note_id IN (%s)
+			ORDER BY note_id, position ASC, created_at ASC
+		`, placeholders), convertIntsToInterface(noteIDs)...)
+		if err == nil {
+			defer checklistRows.Close()
+			for checklistRows.Next() {
+				var item models.ChecklistItem
+				err := checklistRows.Scan(&item.ID, &item.NoteID, &item.Text, &item.IsChecked, &item.Position, &item.CreatedAt, &item.UpdatedAt)
+				if err == nil {
+					checklistMap[item.NoteID] = append(checklistMap[item.NoteID], item)
+				}
+			}
+		}
+	}
+
+	// Get media attachments for all notes
+	mediaMap := make(map[int][]models.MediaAttachment)
+	if len(noteIDs) > 0 {
+		placeholders := strings.Repeat("?,", len(noteIDs))
+		placeholders = placeholders[:len(placeholders)-1]
+		
+		mediaRows, err := database.DB.Query(fmt.Sprintf(`
+			SELECT id, note_id, user_id, file_name, file_type, file_path, file_size, mime_type, 
+			       converted_text, conversion_status, created_at, updated_at
+			FROM media_attachments WHERE note_id IN (%s)
+			ORDER BY note_id, created_at ASC
+		`, placeholders), convertIntsToInterface(noteIDs)...)
+		if err == nil {
+			defer mediaRows.Close()
+			for mediaRows.Next() {
+				var attachment models.MediaAttachment
+				var convertedText sql.NullString
+				err := mediaRows.Scan(&attachment.ID, &attachment.NoteID, &attachment.UserID, 
+					&attachment.FileName, &attachment.FileType, &attachment.FilePath, 
+					&attachment.FileSize, &attachment.MimeType, &convertedText, 
+					&attachment.ConversionStatus, &attachment.CreatedAt, &attachment.UpdatedAt)
+				if err == nil {
+					if convertedText.Valid {
+						attachment.ConvertedText = convertedText.String
+					}
+					mediaMap[attachment.NoteID] = append(mediaMap[attachment.NoteID], attachment)
+				}
+			}
+		}
+	}
+
+	// Get plan preview (first line) for all notes
+	planPreviewMap := make(map[int]string)
+	if len(noteIDs) > 0 {
+		placeholders := strings.Repeat("?,", len(noteIDs))
+		placeholders = placeholders[:len(placeholders)-1]
+		
+		planRows, err := database.DB.Query(fmt.Sprintf(`
+			SELECT note_id, generated_plan
+			FROM plan_data WHERE note_id IN (%s) AND generated_plan IS NOT NULL AND generated_plan != ''
+		`, placeholders), convertIntsToInterface(noteIDs)...)
+		if err == nil {
+			defer planRows.Close()
+			for planRows.Next() {
+				var noteID int
+				var generatedPlan sql.NullString
+				err := planRows.Scan(&noteID, &generatedPlan)
+				if err == nil && generatedPlan.Valid && generatedPlan.String != "" {
+					// Extract first line (up to first newline or first 100 characters)
+					planText := generatedPlan.String
+					firstNewline := strings.Index(planText, "\n")
+					if firstNewline > 0 {
+						planText = planText[:firstNewline]
+					}
+					// Limit to 100 characters for preview
+					if len(planText) > 100 {
+						planText = planText[:100] + "..."
+					}
+					planPreviewMap[noteID] = planText
+				}
+			}
+		}
+	}
+
+	// Convert notes to NoteWithChecklist
+	notesWithChecklist := make([]models.NoteWithChecklist, len(notes))
+	for i, note := range notes {
+		items := checklistMap[note.ID]
+		if items == nil {
+			items = []models.ChecklistItem{}
+		}
+		mediaAttachments := mediaMap[note.ID]
+		if mediaAttachments == nil {
+			mediaAttachments = []models.MediaAttachment{}
+		}
+		notesWithChecklist[i] = models.NoteWithChecklist{
+			Note:            note,
+			ChecklistItems:  items,
+			MediaAttachments: mediaAttachments,
+			PlanPreview:     planPreviewMap[note.ID], // Add plan preview
+		}
+	}
+	c.JSON(http.StatusOK, notesWithChecklist)
+}
+
+// CreateNote creates a new note
+func (h *NoteHandler) CreateNote(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+
+	var req models.CreateNoteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Color == "" {
+		req.Color = "primary"
+	}
+
+	result, err := database.DB.Exec(`
+		INSERT INTO notes (user_id, title, content, color)
+		VALUES (?, ?, ?, ?)
+	`, userID, req.Title, req.Content, req.Color)
+	if err != nil {
+		log.Printf("Failed to create note: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create note"})
+		return
+	}
+
+	noteID, _ := result.LastInsertId()
+
+	note := models.Note{
+		ID:        int(noteID),
+		UserID:    userID.(int),
+		Title:     req.Title,
+		Content:   req.Content,
+		Color:     req.Color,
+		IsPinned:  false,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	c.JSON(http.StatusCreated, models.NoteWithChecklist{
+		Note:           note,
+		ChecklistItems: []models.ChecklistItem{},
+	})
+}
+
+// UpdateNote updates a note
+func (h *NoteHandler) UpdateNote(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	noteIDStr := c.Param("id")
+	noteID, err := strconv.Atoi(noteIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid note ID"})
+		return
+	}
+
+	// Verify note belongs to user
+	var note models.Note
+	err = database.DB.QueryRow(`
+		SELECT id, user_id FROM notes WHERE id = ? AND user_id = ?
+	`, noteID, userID).Scan(&note.ID, &note.UserID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Note not found"})
+		return
+	}
+
+	var req models.UpdateNoteRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Build update query dynamically
+	updateFields := []string{}
+	args := []interface{}{}
+
+	if req.Title != nil {
+		updateFields = append(updateFields, "title = ?")
+		args = append(args, *req.Title)
+	}
+	if req.Content != nil {
+		updateFields = append(updateFields, "content = ?")
+		args = append(args, *req.Content)
+	}
+	if req.Color != nil {
+		updateFields = append(updateFields, "color = ?")
+		args = append(args, *req.Color)
+	}
+	if req.IsPinned != nil {
+		updateFields = append(updateFields, "is_pinned = ?")
+		args = append(args, *req.IsPinned)
+	}
+
+	if len(updateFields) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No fields to update"})
+		return
+	}
+
+	updateFields = append(updateFields, "updated_at = NOW()")
+	args = append(args, noteID)
+
+	query := fmt.Sprintf("UPDATE notes SET %s WHERE id = ?", strings.Join(updateFields, ", "))
+	_, err = database.DB.Exec(query, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update note"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Note updated successfully"})
+}
+
+// DeleteNote deletes a note
+func (h *NoteHandler) DeleteNote(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	noteIDStr := c.Param("id")
+	noteID, err := strconv.Atoi(noteIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid note ID"})
+		return
+	}
+
+	// Verify note belongs to user
+	var note models.Note
+	err = database.DB.QueryRow(`
+		SELECT id, user_id FROM notes WHERE id = ? AND user_id = ?
+	`, noteID, userID).Scan(&note.ID, &note.UserID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Note not found"})
+		return
+	}
+
+	_, err = database.DB.Exec(`DELETE FROM notes WHERE id = ?`, noteID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete note"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Note deleted successfully"})
+}
+
+// CreateChecklistItem creates a new checklist item
+func (h *NoteHandler) CreateChecklistItem(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	noteIDStr := c.Param("id")
+	noteID, err := strconv.Atoi(noteIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid note ID"})
+		return
+	}
+
+	// Verify note belongs to user
+	var note models.Note
+	err = database.DB.QueryRow(`
+		SELECT id, user_id FROM notes WHERE id = ? AND user_id = ?
+	`, noteID, userID).Scan(&note.ID, &note.UserID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Note not found"})
+		return
+	}
+
+	var req models.CreateChecklistItemRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get max position if not provided
+	if req.Position == 0 {
+		var maxPos sql.NullInt64
+		database.DB.QueryRow(`SELECT MAX(position) FROM checklist_items WHERE note_id = ?`, noteID).Scan(&maxPos)
+		if maxPos.Valid {
+			req.Position = int(maxPos.Int64) + 1
+		} else {
+			req.Position = 1
+		}
+	}
+
+	result, err := database.DB.Exec(`
+		INSERT INTO checklist_items (note_id, text, position)
+		VALUES (?, ?, ?)
+	`, noteID, req.Text, req.Position)
+	if err != nil {
+		log.Printf("Failed to create checklist item: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create checklist item"})
+		return
+	}
+
+	itemID, _ := result.LastInsertId()
+
+	item := models.ChecklistItem{
+		ID:        int(itemID),
+		NoteID:    noteID,
+		Text:      req.Text,
+		IsChecked: false,
+		Position:  req.Position,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	c.JSON(http.StatusCreated, item)
+}
+
+// UpdateChecklistItem updates a checklist item
+func (h *NoteHandler) UpdateChecklistItem(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	itemIDStr := c.Param("itemId")
+	itemID, err := strconv.Atoi(itemIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item ID"})
+		return
+	}
+
+	// Verify item belongs to user's note
+	var noteID int
+	err = database.DB.QueryRow(`
+		SELECT ci.note_id FROM checklist_items ci
+		INNER JOIN notes n ON ci.note_id = n.id
+		WHERE ci.id = ? AND n.user_id = ?
+	`, itemID, userID).Scan(&noteID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Checklist item not found"})
+		return
+	}
+
+	var req models.UpdateChecklistItemRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	updateFields := []string{}
+	args := []interface{}{}
+
+	if req.Text != nil {
+		updateFields = append(updateFields, "text = ?")
+		args = append(args, *req.Text)
+	}
+	if req.IsChecked != nil {
+		updateFields = append(updateFields, "is_checked = ?")
+		args = append(args, *req.IsChecked)
+	}
+	if req.Position != nil {
+		updateFields = append(updateFields, "position = ?")
+		args = append(args, *req.Position)
+	}
+
+	if len(updateFields) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No fields to update"})
+		return
+	}
+
+	updateFields = append(updateFields, "updated_at = NOW()")
+	args = append(args, itemID)
+
+	query := fmt.Sprintf("UPDATE checklist_items SET %s WHERE id = ?", strings.Join(updateFields, ", "))
+	_, err = database.DB.Exec(query, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update checklist item"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Checklist item updated successfully"})
+}
+
+// DeleteChecklistItem deletes a checklist item
+func (h *NoteHandler) DeleteChecklistItem(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	itemIDStr := c.Param("itemId")
+	itemID, err := strconv.Atoi(itemIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid item ID"})
+		return
+	}
+
+	// Verify item belongs to user's note
+	var noteID int
+	err = database.DB.QueryRow(`
+		SELECT ci.note_id FROM checklist_items ci
+		INNER JOIN notes n ON ci.note_id = n.id
+		WHERE ci.id = ? AND n.user_id = ?
+	`, itemID, userID).Scan(&noteID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Checklist item not found"})
+		return
+	}
+
+	_, err = database.DB.Exec(`DELETE FROM checklist_items WHERE id = ?`, itemID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete checklist item"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Checklist item deleted successfully"})
+}
+
+// Helper function to convert int slice to interface slice
+func convertIntsToInterface(ints []int) []interface{} {
+	result := make([]interface{}, len(ints))
+	for i, v := range ints {
+		result[i] = v
+	}
+	return result
+}
+
+// GetPlanData retrieves plan data for a note
+func (h *NoteHandler) GetPlanData(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	noteIDStr := c.Param("id")
+	noteID, err := strconv.Atoi(noteIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid note ID"})
+		return
+	}
+
+	// Verify note belongs to user
+	var note models.Note
+	err = database.DB.QueryRow(`
+		SELECT id, user_id FROM notes WHERE id = ? AND user_id = ?
+	`, noteID, userID).Scan(&note.ID, &note.UserID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Note not found"})
+		return
+	}
+
+	// Get plan data
+	var planData models.PlanData
+	var goal, timeAndMilestones, additionalInfo, generatedPlan sql.NullString
+	err = database.DB.QueryRow(`
+		SELECT id, note_id, goal, time_and_milestones, additional_info, generated_plan, created_at, updated_at
+		FROM plan_data WHERE note_id = ?
+	`, noteID).Scan(&planData.ID, &planData.NoteID, &goal, &timeAndMilestones, 
+		&additionalInfo, &generatedPlan, &planData.CreatedAt, &planData.UpdatedAt)
+	
+	if err == nil {
+		if goal.Valid {
+			planData.Goal = goal.String
+		}
+		if timeAndMilestones.Valid {
+			planData.TimeAndMilestones = timeAndMilestones.String
+		}
+		if additionalInfo.Valid {
+			planData.AdditionalInfo = additionalInfo.String
+		}
+		if generatedPlan.Valid {
+			planData.GeneratedPlan = generatedPlan.String
+		}
+	}
+	
+	if err == sql.ErrNoRows {
+		// No plan data yet, return empty
+		c.JSON(http.StatusOK, models.PlanData{NoteID: noteID})
+		return
+	}
+	if err != nil {
+		log.Printf("Failed to get plan data: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch plan data"})
+		return
+	}
+
+	c.JSON(http.StatusOK, planData)
+}
+
+// SavePlanAnswers saves the answers to the planning questions
+func (h *NoteHandler) SavePlanAnswers(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	noteIDStr := c.Param("id")
+	noteID, err := strconv.Atoi(noteIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid note ID"})
+		return
+	}
+
+	// Verify note belongs to user
+	var note models.Note
+	err = database.DB.QueryRow(`
+		SELECT id, user_id, title, content FROM notes WHERE id = ? AND user_id = ?
+	`, noteID, userID).Scan(&note.ID, &note.UserID, &note.Title, &note.Content)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Note not found"})
+		return
+	}
+
+	var req models.SavePlanAnswersRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Check if plan data already exists
+	var existingID int
+	err = database.DB.QueryRow(`SELECT id FROM plan_data WHERE note_id = ?`, noteID).Scan(&existingID)
+	
+	if err == sql.ErrNoRows {
+		// Insert new plan data
+		result, err := database.DB.Exec(`
+			INSERT INTO plan_data (note_id, goal, time_and_milestones, additional_info)
+			VALUES (?, ?, ?, ?)
+		`, noteID, req.Goal, req.TimeAndMilestones, req.AdditionalInfo)
+		if err != nil {
+			log.Printf("Failed to save plan answers: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save plan answers"})
+			return
+		}
+		existingID64, _ := result.LastInsertId()
+		existingID = int(existingID64)
+	} else if err == nil {
+		// Update existing plan data
+		_, err = database.DB.Exec(`
+			UPDATE plan_data 
+			SET goal = ?, time_and_milestones = ?, additional_info = ?, updated_at = NOW()
+			WHERE note_id = ?
+		`, req.Goal, req.TimeAndMilestones, req.AdditionalInfo, noteID)
+		if err != nil {
+			log.Printf("Failed to update plan answers: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update plan answers"})
+			return
+		}
+	} else {
+		log.Printf("Failed to check existing plan data: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save plan answers"})
+		return
+	}
+
+	// Generate plan using OpenAI
+	planData := models.PlanData{
+		ID:                existingID,
+		NoteID:            noteID,
+		Goal:              req.Goal,
+		TimeAndMilestones: req.TimeAndMilestones,
+		AdditionalInfo:    req.AdditionalInfo,
+	}
+
+	generatedPlan, err := h.generatePlan(note, planData)
+	if err != nil {
+		log.Printf("Failed to generate plan: %v", err)
+		// Return error details to client
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Plan answers saved successfully, but plan generation failed",
+			"error": err.Error(),
+			"plan_data": planData,
+		})
+		return
+	}
+
+	// Update with generated plan
+	planData.GeneratedPlan = generatedPlan
+	_, err = database.DB.Exec(`
+		UPDATE plan_data SET generated_plan = ?, updated_at = NOW() WHERE id = ?
+	`, generatedPlan, existingID)
+	if err != nil {
+		log.Printf("Failed to save generated plan: %v", err)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Plan answers saved and plan generated successfully",
+		"plan_data": planData,
+	})
+}
+
+// generatePlan generates a plan using OpenAI based on the note and answers
+func (h *NoteHandler) generatePlan(note models.Note, planData models.PlanData) (string, error) {
+	// Get media attachments with converted text
+	mediaTexts := []string{}
+	rows, err := database.DB.Query(`
+		SELECT file_name, file_type, converted_text, conversion_status
+		FROM media_attachments 
+		WHERE note_id = ? AND conversion_status = 'completed' AND converted_text IS NOT NULL AND converted_text != ''
+		ORDER BY created_at ASC
+	`, note.ID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var fileName, fileType, conversionStatus string
+			var convertedText sql.NullString
+			err := rows.Scan(&fileName, &fileType, &convertedText, &conversionStatus)
+			if err == nil && convertedText.Valid && convertedText.String != "" {
+				// Skip error messages
+				if !strings.HasPrefix(convertedText.String, "Konvertierungsfehler:") {
+					mediaTexts = append(mediaTexts, fmt.Sprintf("[%s (%s)]: %s", fileName, fileType, convertedText.String))
+					log.Printf("Including media attachment in plan prompt: %s (%s), text length: %d", fileName, fileType, len(convertedText.String))
+				} else {
+					log.Printf("Skipping media attachment with error: %s (%s)", fileName, fileType)
+				}
+			}
+		}
+	} else {
+		log.Printf("Failed to query media attachments for note ID %d: %v", note.ID, err)
+	}
+
+	// Build media context
+	mediaContext := ""
+	if len(mediaTexts) > 0 {
+		mediaContext = "\n\nZusätzliche Informationen aus hochgeladenen Medien:\n" + strings.Join(mediaTexts, "\n\n")
+		log.Printf("Media context for plan generation (note ID %d): %d attachments, total context length: %d", note.ID, len(mediaTexts), len(mediaContext))
+	} else {
+		log.Printf("No media attachments found for note ID %d or all failed conversion", note.ID)
+	}
+
+	prompt := fmt.Sprintf(`Erstelle einen klaren, strukturierten Plan basierend auf folgenden Informationen:
+
+Titel des Plans: %s
+Inhalt des Plans: %s
+
+Antworten des Nutzers:
+1. Ziel des Plans: %s
+2. Zeit und Zwischenziele: %s
+3. Weitere wichtige Informationen: %s%s
+
+Erstelle einen präzisen, nicht zu langen Plan (maximal 300 Wörter). Der Plan soll:
+- Klar strukturiert sein
+- Konkrete Schritte enthalten
+- Realistisch und umsetzbar sein
+- Die gegebenen Informationen berücksichtigen
+- Die Informationen aus den hochgeladenen Medien EINBEZIEHEN und darauf Bezug nehmen
+
+Format: Verwende Aufzählungspunkte oder nummerierte Schritte für bessere Lesbarkeit.`, 
+		note.Title, note.Content, planData.Goal, planData.TimeAndMilestones, planData.AdditionalInfo, mediaContext)
+	
+	log.Printf("Plan generation prompt for note ID %d, total length: %d, includes media: %v", note.ID, len(prompt), len(mediaContext) > 0)
+
+	log.Printf("Generating plan for note ID: %d, Title: %s", note.ID, note.Title)
+	
+	openaiService := services.NewOpenAIService()
+	if openaiService.APIKey == "" {
+		log.Printf("ERROR: OpenAI API key is not configured")
+		return "", fmt.Errorf("OpenAI API key is not configured. Please check your environment variables.")
+	}
+	
+	response, err := openaiService.GenerateResponse(prompt, "Du bist ein hilfreicher Planungsassistent.")
+	if err != nil {
+		log.Printf("ERROR: Failed to generate plan via OpenAI: %v", err)
+		return "", fmt.Errorf("Fehler bei der Plan-Generierung: %v", err)
+	}
+
+	if response == "" {
+		log.Printf("ERROR: OpenAI returned empty response")
+		return "", fmt.Errorf("OpenAI hat eine leere Antwort zurückgegeben")
+	}
+
+	log.Printf("Plan generated successfully, length: %d characters", len(response))
+	return response, nil
+}
+
+// UpdatePlanViaChat updates the plan based on user chat message
+func (h *NoteHandler) UpdatePlanViaChat(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	noteIDStr := c.Param("id")
+	noteID, err := strconv.Atoi(noteIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid note ID"})
+		return
+	}
+
+	// Verify note belongs to user
+	var note models.Note
+	err = database.DB.QueryRow(`
+		SELECT id, user_id, title, content FROM notes WHERE id = ? AND user_id = ?
+	`, noteID, userID).Scan(&note.ID, &note.UserID, &note.Title, &note.Content)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Note not found"})
+		return
+	}
+
+	// Get current plan data
+	var planData models.PlanData
+	var goal, timeAndMilestones, additionalInfo, generatedPlan sql.NullString
+	err = database.DB.QueryRow(`
+		SELECT id, note_id, goal, time_and_milestones, additional_info, generated_plan, created_at, updated_at
+		FROM plan_data WHERE note_id = ?
+	`, noteID).Scan(&planData.ID, &planData.NoteID, &goal, &timeAndMilestones, 
+		&additionalInfo, &generatedPlan, &planData.CreatedAt, &planData.UpdatedAt)
+	
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Plan data not found. Please generate a plan first."})
+		return
+	}
+	if err != nil {
+		log.Printf("Failed to get plan data: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch plan data"})
+		return
+	}
+
+	if goal.Valid {
+		planData.Goal = goal.String
+	}
+	if timeAndMilestones.Valid {
+		planData.TimeAndMilestones = timeAndMilestones.String
+	}
+	if additionalInfo.Valid {
+		planData.AdditionalInfo = additionalInfo.String
+	}
+	if generatedPlan.Valid {
+		planData.GeneratedPlan = generatedPlan.String
+	}
+
+	var req models.UpdatePlanChatRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Generate updated plan using OpenAI
+	updatedPlan, err := h.updatePlanWithChat(note, planData, req.Message)
+	if err != nil {
+		log.Printf("Failed to update plan via chat: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Fehler bei der Plan-Aktualisierung: %v", err)})
+		return
+	}
+
+	// Update plan in database
+	_, err = database.DB.Exec(`
+		UPDATE plan_data SET generated_plan = ?, updated_at = NOW() WHERE id = ?
+	`, updatedPlan, planData.ID)
+	if err != nil {
+		log.Printf("Failed to save updated plan: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save updated plan"})
+		return
+	}
+
+	planData.GeneratedPlan = updatedPlan
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Plan updated successfully",
+		"plan_data": planData,
+	})
+}
+
+// updatePlanWithChat updates the plan based on user chat message
+func (h *NoteHandler) updatePlanWithChat(note models.Note, planData models.PlanData, userMessage string) (string, error) {
+	// Get media attachments with converted text
+	mediaTexts := []string{}
+	rows, err := database.DB.Query(`
+		SELECT file_name, file_type, converted_text 
+		FROM media_attachments 
+		WHERE note_id = ? AND conversion_status = 'completed' AND converted_text IS NOT NULL AND converted_text != ''
+		ORDER BY created_at ASC
+	`, note.ID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var fileName, fileType string
+			var convertedText sql.NullString
+			err := rows.Scan(&fileName, &fileType, &convertedText)
+			if err == nil && convertedText.Valid && convertedText.String != "" {
+				// Skip error messages
+				if !strings.HasPrefix(convertedText.String, "Konvertierungsfehler:") {
+					mediaTexts = append(mediaTexts, fmt.Sprintf("[%s (%s)]: %s", fileName, fileType, convertedText.String))
+				}
+			}
+		}
+	}
+
+	// Build media context
+	mediaContext := ""
+	if len(mediaTexts) > 0 {
+		mediaContext = "\n\nZusätzliche Informationen aus hochgeladenen Medien:\n" + strings.Join(mediaTexts, "\n\n")
+		log.Printf("Media context for plan update (note ID %d): %d attachments", note.ID, len(mediaTexts))
+	}
+
+	prompt := fmt.Sprintf(`Du hast einen bestehenden Plan, der angepasst werden soll. Hier sind die Informationen:
+
+Titel des Plans: %s
+Inhalt des Plans: %s
+
+Ursprüngliche Antworten:
+1. Ziel des Plans: %s
+2. Zeit und Zwischenziele: %s
+3. Weitere wichtige Informationen: %s%s
+
+Aktueller Plan:
+%s
+
+Nutzer-Anfrage zur Anpassung: %s
+
+Bitte passe den Plan entsprechend der Nutzer-Anfrage an. Der Plan soll:
+- Klar strukturiert sein
+- Konkrete Schritte enthalten
+- Realistisch und umsetzbar sein
+- Die ursprünglichen Informationen berücksichtigen
+- Die Anpassungen aus der Nutzer-Anfrage einbeziehen
+- Die Informationen aus den hochgeladenen Medien berücksichtigen
+
+Format: Verwende Aufzählungspunkte oder nummerierte Schritte für bessere Lesbarkeit. Antworte NUR mit dem aktualisierten Plan, keine zusätzlichen Erklärungen.`, 
+		note.Title, note.Content, planData.Goal, planData.TimeAndMilestones, 
+		planData.AdditionalInfo, mediaContext, planData.GeneratedPlan, userMessage)
+
+	log.Printf("Updating plan for note ID: %d based on chat message", note.ID)
+	
+	openaiService := services.NewOpenAIService()
+	if openaiService.APIKey == "" {
+		log.Printf("ERROR: OpenAI API key is not configured")
+		return "", fmt.Errorf("OpenAI API key is not configured")
+	}
+	
+	response, err := openaiService.GenerateResponse(prompt, "Du bist ein hilfreicher Planungsassistent, der Pläne präzise anpasst.")
+	if err != nil {
+		log.Printf("ERROR: Failed to update plan via OpenAI: %v", err)
+		return "", fmt.Errorf("Fehler bei der Plan-Aktualisierung: %v", err)
+	}
+
+	if response == "" {
+		log.Printf("ERROR: OpenAI returned empty response")
+		return "", fmt.Errorf("OpenAI hat eine leere Antwort zurückgegeben")
+	}
+
+	log.Printf("Plan updated successfully, length: %d characters", len(response))
+	return response, nil
+}
+
+// AdoptPlan copies the generated plan into the note content
+func (h *NoteHandler) AdoptPlan(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	noteIDStr := c.Param("id")
+	noteID, err := strconv.Atoi(noteIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid note ID"})
+		return
+	}
+
+	// Verify note belongs to user
+	var note models.Note
+	err = database.DB.QueryRow(`
+		SELECT id, user_id FROM notes WHERE id = ? AND user_id = ?
+	`, noteID, userID).Scan(&note.ID, &note.UserID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Note not found"})
+		return
+	}
+
+	// Get current plan data
+	var planData models.PlanData
+	var goal, timeAndMilestones, additionalInfo, generatedPlan sql.NullString
+	err = database.DB.QueryRow(`
+		SELECT id, note_id, goal, time_and_milestones, additional_info, generated_plan, created_at, updated_at
+		FROM plan_data WHERE note_id = ?
+	`, noteID).Scan(&planData.ID, &planData.NoteID, &goal, &timeAndMilestones, 
+		&additionalInfo, &generatedPlan, &planData.CreatedAt, &planData.UpdatedAt)
+	
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Plan data not found. Please generate a plan first."})
+		return
+	}
+	if err != nil {
+		log.Printf("Failed to get plan data: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch plan data"})
+		return
+	}
+
+	if !generatedPlan.Valid || generatedPlan.String == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No generated plan found. Please generate a plan first."})
+		return
+	}
+
+	// Update note content with generated plan
+	_, err = database.DB.Exec(`
+		UPDATE notes SET content = ?, updated_at = NOW() WHERE id = ?
+	`, generatedPlan.String, noteID)
+	if err != nil {
+		log.Printf("Failed to adopt plan: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to adopt plan"})
+		return
+	}
+
+	// Fetch updated note
+	var updatedNote models.Note
+	err = database.DB.QueryRow(`
+		SELECT id, user_id, title, content, color, is_pinned, created_at, updated_at
+		FROM notes WHERE id = ?
+	`, noteID).Scan(&updatedNote.ID, &updatedNote.UserID, &updatedNote.Title, 
+		&updatedNote.Content, &updatedNote.Color, &updatedNote.IsPinned, 
+		&updatedNote.CreatedAt, &updatedNote.UpdatedAt)
+	if err != nil {
+		log.Printf("Failed to fetch updated note: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch updated note"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Plan successfully adopted into note",
+		"note": updatedNote,
+	})
+}
+
+// GenerateChecklist generates a checklist based on the plan
+func (h *NoteHandler) GenerateChecklist(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	noteIDStr := c.Param("id")
+	noteID, err := strconv.Atoi(noteIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid note ID"})
+		return
+	}
+
+	// Verify note belongs to user
+	var note models.Note
+	err = database.DB.QueryRow(`
+		SELECT id, user_id, title, content FROM notes WHERE id = ? AND user_id = ?
+	`, noteID, userID).Scan(&note.ID, &note.UserID, &note.Title, &note.Content)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Note not found"})
+		return
+	}
+
+	// Get current plan data
+	var planData models.PlanData
+	var goal, timeAndMilestones, additionalInfo, generatedPlan sql.NullString
+	err = database.DB.QueryRow(`
+		SELECT id, note_id, goal, time_and_milestones, additional_info, generated_plan, created_at, updated_at
+		FROM plan_data WHERE note_id = ?
+	`, noteID).Scan(&planData.ID, &planData.NoteID, &goal, &timeAndMilestones, 
+		&additionalInfo, &generatedPlan, &planData.CreatedAt, &planData.UpdatedAt)
+	
+	if err == sql.ErrNoRows {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Plan data not found. Please generate a plan first."})
+		return
+	}
+	if err != nil {
+		log.Printf("Failed to get plan data: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch plan data"})
+		return
+	}
+
+	if goal.Valid {
+		planData.Goal = goal.String
+	}
+	if timeAndMilestones.Valid {
+		planData.TimeAndMilestones = timeAndMilestones.String
+	}
+	if additionalInfo.Valid {
+		planData.AdditionalInfo = additionalInfo.String
+	}
+	if !generatedPlan.Valid || generatedPlan.String == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No generated plan found. Please generate a plan first."})
+		return
+	}
+	planData.GeneratedPlan = generatedPlan.String
+
+	// Get existing checklist items
+	existingItems := []models.ChecklistItem{}
+	checklistRows, err := database.DB.Query(`
+		SELECT id, note_id, text, is_checked, position, created_at, updated_at
+		FROM checklist_items WHERE note_id = ?
+		ORDER BY position ASC, created_at ASC
+	`, noteID)
+	if err == nil {
+		defer checklistRows.Close()
+		for checklistRows.Next() {
+			var item models.ChecklistItem
+			err := checklistRows.Scan(&item.ID, &item.NoteID, &item.Text, &item.IsChecked, &item.Position, &item.CreatedAt, &item.UpdatedAt)
+			if err == nil {
+				existingItems = append(existingItems, item)
+			}
+		}
+	}
+
+	// Generate checklist using OpenAI (with existing items context)
+	checklistItems, err := h.generateChecklistFromPlan(note, planData, existingItems)
+	if err != nil {
+		log.Printf("Failed to generate checklist: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Fehler bei der Checklist-Generierung: %v", err)})
+		return
+	}
+
+	// Get current max position
+	var maxPos sql.NullInt64
+	database.DB.QueryRow(`SELECT MAX(position) FROM checklist_items WHERE note_id = ?`, noteID).Scan(&maxPos)
+	startPosition := 1
+	if maxPos.Valid {
+		startPosition = int(maxPos.Int64) + 1
+	}
+
+	// Insert checklist items
+	createdItems := []models.ChecklistItem{}
+	for i, itemText := range checklistItems {
+		result, err := database.DB.Exec(`
+			INSERT INTO checklist_items (note_id, text, position)
+			VALUES (?, ?, ?)
+		`, noteID, itemText, startPosition+i)
+		if err != nil {
+			log.Printf("Failed to create checklist item: %v", err)
+			continue
+		}
+
+		itemID, _ := result.LastInsertId()
+		createdItems = append(createdItems, models.ChecklistItem{
+			ID:        int(itemID),
+			NoteID:    noteID,
+			Text:      itemText,
+			IsChecked: false,
+			Position:  startPosition + i,
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Checklist generated successfully",
+		"items": createdItems,
+		"count": len(createdItems),
+	})
+}
+
+// generateChecklistFromPlan generates a checklist based on the plan using OpenAI
+func (h *NoteHandler) generateChecklistFromPlan(note models.Note, planData models.PlanData, existingItems []models.ChecklistItem) ([]string, error) {
+	// Get media attachments with converted text
+	mediaTexts := []string{}
+	rows, err := database.DB.Query(`
+		SELECT file_name, file_type, converted_text 
+		FROM media_attachments 
+		WHERE note_id = ? AND conversion_status = 'completed' AND converted_text IS NOT NULL AND converted_text != ''
+		ORDER BY created_at ASC
+	`, note.ID)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var fileName, fileType string
+			var convertedText sql.NullString
+			err := rows.Scan(&fileName, &fileType, &convertedText)
+			if err == nil && convertedText.Valid && convertedText.String != "" {
+				// Skip error messages
+				if !strings.HasPrefix(convertedText.String, "Konvertierungsfehler:") {
+					mediaTexts = append(mediaTexts, fmt.Sprintf("[%s (%s)]: %s", fileName, fileType, convertedText.String))
+				}
+			}
+		}
+	}
+
+	// Build media context
+	mediaContext := ""
+	if len(mediaTexts) > 0 {
+		mediaContext = "\n\nZusätzliche Informationen aus hochgeladenen Medien:\n" + strings.Join(mediaTexts, "\n\n")
+		log.Printf("Media context for checklist generation (note ID %d): %d attachments", note.ID, len(mediaTexts))
+	}
+
+	// Build existing items list for context
+	existingItemsText := ""
+	if len(existingItems) > 0 {
+		existingItemsText = "\n\nBereits vorhandene Checklist-Items:\n"
+		for i, item := range existingItems {
+			status := "offen"
+			if item.IsChecked {
+				status = "erledigt"
+			}
+			existingItemsText += fmt.Sprintf("%d. %s (%s)\n", i+1, item.Text, status)
+		}
+		existingItemsText += "\nWICHTIG: Erstelle KEINE redundanten oder ähnlichen Items zu den bereits vorhandenen. Fokussiere dich nur auf fehlende Anforderungen, die noch nicht abgedeckt sind."
+	}
+
+	prompt := fmt.Sprintf(`Basierend auf folgendem Plan, erstelle eine Liste von konkreten Anforderungen/Aufgaben, die erfüllt werden müssen, um den Plan vollständig durchzuführen.
+
+Titel des Plans: %s
+Inhalt des Plans: %s
+
+Plan-Informationen:
+1. Ziel: %s
+2. Zeit & Zwischenziele: %s
+3. Weitere Infos: %s%s
+
+Generierter Plan:
+%s%s
+
+Erstelle eine präzise Checkliste mit konkreten, umsetzbaren Anforderungen. Jede Anforderung sollte:
+- Spezifisch und messbar sein
+- Eine klare Aktion beschreiben
+- Realistisch und umsetzbar sein
+- Direkt mit dem Plan zusammenhängen
+- NICHT redundant zu bereits vorhandenen Items sein
+
+Format: Gib NUR eine Liste zurück, eine Anforderung pro Zeile, ohne Nummerierung oder Bullet Points. Jede Zeile sollte eine eigenständige, klare Anforderung sein.`, 
+		note.Title, note.Content, planData.Goal, planData.TimeAndMilestones, 
+		planData.AdditionalInfo, mediaContext, planData.GeneratedPlan, existingItemsText)
+
+	log.Printf("Generating checklist for note ID: %d", note.ID)
+	
+	openaiService := services.NewOpenAIService()
+	if openaiService.APIKey == "" {
+		log.Printf("ERROR: OpenAI API key is not configured")
+		return nil, fmt.Errorf("OpenAI API key is not configured")
+	}
+	
+	response, err := openaiService.GenerateResponse(prompt, "Du bist ein hilfreicher Planungsassistent, der präzise Checklisten erstellt.")
+	if err != nil {
+		log.Printf("ERROR: Failed to generate checklist via OpenAI: %v", err)
+		return nil, fmt.Errorf("Fehler bei der Checklist-Generierung: %v", err)
+	}
+
+	if response == "" {
+		log.Printf("ERROR: OpenAI returned empty response")
+		return nil, fmt.Errorf("OpenAI hat eine leere Antwort zurückgegeben")
+	}
+
+	// Parse response into checklist items
+	// Split by newlines and clean up
+	lines := strings.Split(response, "\n")
+	checklistItems := []string{}
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		// Remove common prefixes like "- ", "* ", "1. ", etc.
+		line = strings.TrimPrefix(line, "- ")
+		line = strings.TrimPrefix(line, "* ")
+		line = strings.TrimPrefix(line, "• ")
+		// Remove numbered prefixes (1. 2. etc.)
+		if matched, _ := regexp.MatchString(`^\d+\.\s*`, line); matched {
+			line = regexp.MustCompile(`^\d+\.\s*`).ReplaceAllString(line, "")
+		}
+		line = strings.TrimSpace(line)
+		if line != "" && len(line) > 3 { // Only add non-empty items with meaningful content
+			checklistItems = append(checklistItems, line)
+		}
+	}
+
+	if len(checklistItems) == 0 {
+		return nil, fmt.Errorf("Keine Checklist-Items konnten aus der Antwort generiert werden")
+	}
+
+	log.Printf("Checklist generated successfully, %d items", len(checklistItems))
+	return checklistItems, nil
+}
+
+// UploadMedia uploads a media file and converts it to text
+func (h *NoteHandler) UploadMedia(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	noteIDStr := c.Param("id")
+	noteID, err := strconv.Atoi(noteIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid note ID"})
+		return
+	}
+
+	// Verify note belongs to user
+	var note models.Note
+	err = database.DB.QueryRow(`
+		SELECT id, user_id FROM notes WHERE id = ? AND user_id = ?
+	`, noteID, userID).Scan(&note.ID, &note.UserID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Note not found"})
+		return
+	}
+
+	// Get file from form
+	file, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No file provided"})
+		return
+	}
+
+	// Determine file type
+	fileType := c.PostForm("file_type") // 'audio', 'pdf', 'image'
+	if fileType == "" {
+		// Try to determine from MIME type
+		mimeType := file.Header.Get("Content-Type")
+		if strings.Contains(mimeType, "audio") {
+			fileType = "audio"
+		} else if strings.Contains(mimeType, "image") {
+			fileType = "image"
+		} else if strings.Contains(mimeType, "pdf") || strings.HasSuffix(strings.ToLower(file.Filename), ".pdf") {
+			fileType = "pdf"
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported file type. Please provide audio, PDF, or image."})
+			return
+		}
+	}
+
+	// Validate file type
+	if fileType != "audio" && fileType != "pdf" && fileType != "image" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid file type. Must be 'audio', 'pdf', or 'image'"})
+		return
+	}
+
+	// Ensure storage directory exists
+	if err := services.EnsureStoragePath(); err != nil {
+		log.Printf("Failed to ensure storage path: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to setup storage"})
+		return
+	}
+
+	// Generate unique filename
+	timestamp := time.Now().Unix()
+	uniqueFileName := fmt.Sprintf("%d_%d_%s", userID.(int), timestamp, file.Filename)
+	storagePath := services.GetMediaStoragePath()
+	filePath := filepath.Join(storagePath, uniqueFileName)
+
+	// Save file
+	if err := c.SaveUploadedFile(file, filePath); err != nil {
+		log.Printf("Failed to save file: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save file"})
+		return
+	}
+
+	// Read file data for conversion
+	fileData, err := os.ReadFile(filePath)
+	if err != nil {
+		log.Printf("Failed to read file: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read file"})
+		return
+	}
+
+	// Insert media attachment record with 'processing' status
+	result, err := database.DB.Exec(`
+		INSERT INTO media_attachments (note_id, user_id, file_name, file_type, file_path, file_size, mime_type, conversion_status)
+		VALUES (?, ?, ?, ?, ?, ?, ?, 'processing')
+	`, noteID, userID, file.Filename, fileType, filePath, file.Size, file.Header.Get("Content-Type"))
+	if err != nil {
+		log.Printf("Failed to create media attachment record: %v", err)
+		os.Remove(filePath) // Clean up file
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create media attachment record"})
+		return
+	}
+
+	attachmentID, _ := result.LastInsertId()
+
+	// Convert media to text in background (async)
+	go func() {
+		log.Printf("Starting media conversion for attachment ID %d, type: %s, filename: %s", attachmentID, fileType, file.Filename)
+		mediaService := services.NewMediaService()
+		convertedText, err := mediaService.ConvertMediaToText(fileData, fileType, file.Filename, file.Header.Get("Content-Type"))
+		
+		status := "completed"
+		if err != nil {
+			log.Printf("Failed to convert media to text (attachment ID %d): %v", attachmentID, err)
+			status = "failed"
+			convertedText = fmt.Sprintf("Konvertierungsfehler: %v", err)
+		} else {
+			log.Printf("Successfully converted media (attachment ID %d), text length: %d characters", attachmentID, len(convertedText))
+			if len(convertedText) == 0 {
+				log.Printf("WARNING: Conversion succeeded but returned empty text for attachment ID %d", attachmentID)
+				status = "failed"
+				convertedText = "Konvertierung erfolgreich, aber kein Text extrahiert."
+			}
+		}
+
+		// Update media attachment with converted text
+		_, updateErr := database.DB.Exec(`
+			UPDATE media_attachments 
+			SET converted_text = ?, conversion_status = ?, updated_at = NOW()
+			WHERE id = ?
+		`, convertedText, status, attachmentID)
+		if updateErr != nil {
+			log.Printf("Failed to update media attachment (ID %d): %v", attachmentID, updateErr)
+		} else {
+			log.Printf("Updated media attachment (ID %d) with status: %s", attachmentID, status)
+		}
+	}()
+
+	// Return immediately with attachment info
+	attachment := models.MediaAttachment{
+		ID:              int(attachmentID),
+		NoteID:          noteID,
+		UserID:          userID.(int),
+		FileName:        file.Filename,
+		FileType:        fileType,
+		FilePath:        filePath,
+		FileSize:        file.Size,
+		MimeType:        file.Header.Get("Content-Type"),
+		ConversionStatus: "processing",
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":   "File uploaded successfully. Conversion in progress.",
+		"attachment": attachment,
+	})
+}
+
+// GetMediaAttachments returns all media attachments for a note
+func (h *NoteHandler) GetMediaAttachments(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	noteIDStr := c.Param("id")
+	noteID, err := strconv.Atoi(noteIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid note ID"})
+		return
+	}
+
+	// Verify note belongs to user
+	var note models.Note
+	err = database.DB.QueryRow(`
+		SELECT id, user_id FROM notes WHERE id = ? AND user_id = ?
+	`, noteID, userID).Scan(&note.ID, &note.UserID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Note not found"})
+		return
+	}
+
+	// Get media attachments
+	rows, err := database.DB.Query(`
+		SELECT id, note_id, user_id, file_name, file_type, file_path, file_size, mime_type, 
+		       converted_text, conversion_status, created_at, updated_at
+		FROM media_attachments WHERE note_id = ? AND user_id = ?
+		ORDER BY created_at DESC
+	`, noteID, userID)
+	if err != nil {
+		log.Printf("Failed to query media attachments: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch media attachments"})
+		return
+	}
+	defer rows.Close()
+
+	var attachments []models.MediaAttachment
+	for rows.Next() {
+		var attachment models.MediaAttachment
+		var convertedText sql.NullString
+		err := rows.Scan(&attachment.ID, &attachment.NoteID, &attachment.UserID, &attachment.FileName,
+			&attachment.FileType, &attachment.FilePath, &attachment.FileSize, &attachment.MimeType,
+			&convertedText, &attachment.ConversionStatus, &attachment.CreatedAt, &attachment.UpdatedAt)
+		if err != nil {
+			log.Printf("Failed to scan media attachment: %v", err)
+			continue
+		}
+		if convertedText.Valid {
+			attachment.ConvertedText = convertedText.String
+		}
+		attachments = append(attachments, attachment)
+	}
+
+	c.JSON(http.StatusOK, attachments)
+}
+
+// DeleteMediaAttachment deletes a media attachment
+func (h *NoteHandler) DeleteMediaAttachment(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	attachmentIDStr := c.Param("attachmentId")
+	attachmentID, err := strconv.Atoi(attachmentIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid attachment ID"})
+		return
+	}
+
+	// Verify attachment belongs to user
+	var filePath string
+	err = database.DB.QueryRow(`
+		SELECT file_path FROM media_attachments WHERE id = ? AND user_id = ?
+	`, attachmentID, userID).Scan(&filePath)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Media attachment not found"})
+		return
+	}
+
+	// Delete file from filesystem
+	if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+		log.Printf("Failed to delete file: %v", err)
+	}
+
+	// Delete from database
+	_, err = database.DB.Exec(`DELETE FROM media_attachments WHERE id = ?`, attachmentID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete media attachment"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Media attachment deleted successfully"})
+}
+
+// MeditationHandler handles meditation session endpoints
+type MeditationHandler struct {
+	openAIService *services.OpenAIService
+}
+
+// NewMeditationHandler creates a new meditation handler
+func NewMeditationHandler() *MeditationHandler {
+	return &MeditationHandler{
+		openAIService: services.NewOpenAIService(),
+	}
+}
+
+// StartMeditation starts a new meditation session
+func (h *MeditationHandler) StartMeditation(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+
+	var req models.StartMeditationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Create meditation session
+	result, err := database.DB.Exec(`
+		INSERT INTO meditation_sessions (user_id, goal, status)
+		VALUES (?, ?, 'active')
+	`, userID, req.Goal)
+	if err != nil {
+		log.Printf("Failed to create meditation session: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create meditation session"})
+		return
+	}
+
+	sessionID, _ := result.LastInsertId()
+
+	// Build user context for AI
+	userContext, err := services.BuildUserContext(userID.(int))
+	if err != nil {
+		log.Printf("Failed to build user context: %v", err)
+		userContext = "" // Continue without context if it fails
+	}
+
+	// Generate initial AI message based on goal and user context
+	initialPrompt := fmt.Sprintf(`Du bist ein einfühlsamer Meditations- und Achtsamkeits-Coach. Der Nutzer möchte eine Meditation zum Thema "%s" durchführen.
+
+%s
+
+WICHTIG: Antworte IMMER nur in 1-3 Sätzen. Sei kurz und prägnant.
+
+Beginne die Meditation mit einer warmen, einladenden Begrüßung und einer ersten Frage, die dem Nutzer hilft, tiefer in das Thema einzutauchen. Die Meditation soll interaktiv sein - stelle Fragen, höre zu und führe den Nutzer sanft durch den Prozess. Sei einfühlsam, ruhig und unterstützend.`, req.Goal, userContext)
+
+	aiResponse, err := h.openAIService.GenerateResponseWithMaxTokens(initialPrompt, "Du bist ein einfühlsamer Meditations- und Achtsamkeits-Coach, der Menschen durch interaktive Meditationen führt. Antworte IMMER nur in 1-3 Sätzen.", 150)
+	if err != nil {
+		log.Printf("Failed to generate initial meditation message: %v", err)
+		aiResponse = fmt.Sprintf("Willkommen zu deiner Meditation zum Thema: %s\n\nLass uns gemeinsam beginnen. Was fühlst du gerade in diesem Moment?", req.Goal)
+	}
+
+	// Save initial AI message
+	_, err = database.DB.Exec(`
+		INSERT INTO meditation_messages (session_id, type, content)
+		VALUES (?, 'ai', ?)
+	`, sessionID, aiResponse)
+	if err != nil {
+		log.Printf("Failed to save initial AI message: %v", err)
+	}
+
+	session := models.MeditationSession{
+		ID:        int(sessionID),
+		UserID:    userID.(int),
+		Goal:      req.Goal,
+		Status:    "active",
+		StartedAt: time.Now(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"session": session,
+		"initial_message": aiResponse,
+	})
+}
+
+// SendMeditationMessage sends a message in an active meditation session
+func (h *MeditationHandler) SendMeditationMessage(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	sessionIDStr := c.Param("id")
+	sessionID, err := strconv.Atoi(sessionIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid session ID"})
+		return
+	}
+
+	// Verify session belongs to user
+	var session models.MeditationSession
+	err = database.DB.QueryRow(`
+		SELECT id, user_id, goal, status FROM meditation_sessions WHERE id = ? AND user_id = ?
+	`, sessionID, userID).Scan(&session.ID, &session.UserID, &session.Goal, &session.Status)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Meditation session not found"})
+		return
+	}
+
+	// If session is completed, automatically reactivate it to allow resuming
+	if session.Status == "completed" {
+		_, err = database.DB.Exec(`
+			UPDATE meditation_sessions 
+			SET status = 'active', ended_at = NULL, report = NULL, updated_at = NOW()
+			WHERE id = ?
+		`, sessionID)
+		if err != nil {
+			log.Printf("Failed to reactivate meditation session: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reactivate session"})
+			return
+		}
+		session.Status = "active"
+		log.Printf("Meditation session %d reactivated for resuming", sessionID)
+	} else if session.Status != "active" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Meditation session is not active"})
+		return
+	}
+
+	var req models.SendMeditationMessageRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Save user message
+	_, err = database.DB.Exec(`
+		INSERT INTO meditation_messages (session_id, type, content)
+		VALUES (?, 'user', ?)
+	`, sessionID, req.Content)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save message"})
+		return
+	}
+
+	// Get conversation history
+	rows, err := database.DB.Query(`
+		SELECT type, content FROM meditation_messages 
+		WHERE session_id = ? 
+		ORDER BY created_at ASC
+	`, sessionID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get conversation history"})
+		return
+	}
+	defer rows.Close()
+
+	var conversationHistory []services.Message
+	for rows.Next() {
+		var msgType, content string
+		err := rows.Scan(&msgType, &content)
+		if err != nil {
+			continue
+		}
+		role := msgType
+		if msgType == "ai" {
+			role = "assistant"
+		}
+		if role == "user" || role == "assistant" {
+			conversationHistory = append(conversationHistory, services.Message{
+				Role:    role,
+				Content: content,
+			})
+		}
+	}
+
+	// Build user context
+	userContext, err := services.BuildUserContext(userID.(int))
+	if err != nil {
+		log.Printf("Failed to build user context: %v", err)
+		userContext = ""
+	}
+
+	// Generate AI response
+	aiResponse, err := h.generateMeditationResponse(req.Content, conversationHistory, session.Goal, userContext)
+	if err != nil {
+		log.Printf("Failed to generate meditation response: %v", err)
+		aiResponse = "Ich verstehe. Lass uns weitergehen. Wie fühlst du dich dabei?"
+	}
+
+	// Save AI response
+	_, err = database.DB.Exec(`
+		INSERT INTO meditation_messages (session_id, type, content)
+		VALUES (?, 'ai', ?)
+	`, sessionID, aiResponse)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save AI response"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"ai_message": aiResponse,
+	})
+}
+
+// generateMeditationResponse generates an AI response for meditation
+func (h *MeditationHandler) generateMeditationResponse(userMessage string, conversationHistory []services.Message, goal, userContext string) (string, error) {
+	systemPrompt := `Du bist ein einfühlsamer Meditations- und Achtsamkeits-Coach. Du führst den Nutzer durch eine interaktive Meditation.
+
+WICHTIGE PRINZIPIEN:
+- Sei warm, einfühlsam und unterstützend
+- Stelle offene Fragen, die zum Nachdenken anregen
+- Führe den Nutzer sanft durch den Prozess
+- Sei präsent und aufmerksam
+- Reagiere auf das, was der Nutzer teilt
+- Die Meditation ist interaktiv - stelle Fragen und höre zu
+- Antworte auf Deutsch
+- Sei wie ein Therapeut - einfühlsam, professionell und unterstützend
+
+KRITISCH WICHTIG: Antworte IMMER nur in 1-3 Sätzen. Sei kurz und prägnant. Keine langen Erklärungen oder Ausführungen.
+
+Meditationsziel: ` + goal
+
+	if userContext != "" {
+		systemPrompt += "\n\nNutzer-Kontext:\n" + userContext
+	}
+
+	systemPrompt += "\n\nFühre die Meditation weiter, basierend auf dem, was der Nutzer gerade teilt. Stelle eine passende Frage oder gib eine einfühlsame Antwort. MAXIMAL 3 Sätze."
+
+	messages := []services.Message{
+		{
+			Role:    "system",
+			Content: systemPrompt,
+		},
+	}
+
+	// Add conversation history (last 10 messages to keep context manageable)
+	historyLimit := 10
+	if len(conversationHistory) > historyLimit {
+		conversationHistory = conversationHistory[len(conversationHistory)-historyLimit:]
+	}
+	messages = append(messages, conversationHistory...)
+
+	// Add current user message
+	messages = append(messages, services.Message{
+		Role:    "user",
+		Content: userMessage,
+	})
+
+	request := services.OpenAIRequest{
+		Model:       "gpt-3.5-turbo",
+		Messages:    messages,
+		MaxTokens:   150, // Reduced to enforce shorter responses (1-3 sentences)
+		Temperature: 0.8, // Slightly higher for more creative, empathetic responses
+	}
+
+	response, err := h.openAIService.MakeAPIRequest(request)
+	if err != nil {
+		return "", err
+	}
+
+	if len(response.Choices) == 0 {
+		return "", fmt.Errorf("no response from OpenAI")
+	}
+
+	return response.Choices[0].Message.Content, nil
+}
+
+// EndMeditation ends a meditation session and generates a report
+func (h *MeditationHandler) EndMeditation(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	sessionIDStr := c.Param("id")
+	sessionID, err := strconv.Atoi(sessionIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid session ID"})
+		return
+	}
+
+	// Verify session belongs to user
+	var session models.MeditationSession
+	var startedAt time.Time
+	err = database.DB.QueryRow(`
+		SELECT id, user_id, goal, status, started_at FROM meditation_sessions WHERE id = ? AND user_id = ?
+	`, sessionID, userID).Scan(&session.ID, &session.UserID, &session.Goal, &session.Status, &startedAt)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Meditation session not found"})
+		return
+	}
+
+	if session.Status != "active" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Meditation session is not active"})
+		return
+	}
+
+	// Get all messages
+	rows, err := database.DB.Query(`
+		SELECT type, content, created_at FROM meditation_messages 
+		WHERE session_id = ? 
+		ORDER BY created_at ASC
+	`, sessionID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get messages"})
+		return
+	}
+	defer rows.Close()
+
+	var messages []models.MeditationMessage
+	for rows.Next() {
+		var msg models.MeditationMessage
+		err := rows.Scan(&msg.Type, &msg.Content, &msg.CreatedAt)
+		if err != nil {
+			continue
+		}
+		msg.SessionID = sessionID
+		messages = append(messages, msg)
+	}
+
+	// Calculate duration
+	endedAt := time.Now()
+	duration := int(endedAt.Sub(startedAt).Seconds())
+
+	// Generate meditation report
+	report, err := h.generateMeditationReport(session.Goal, messages, duration)
+	if err != nil {
+		log.Printf("Failed to generate meditation report: %v", err)
+		report = fmt.Sprintf("Meditation zum Thema: %s\nDauer: %d Minuten %d Sekunden\n\nDie Meditation wurde erfolgreich abgeschlossen.", session.Goal, duration/60, duration%60)
+	}
+
+	// Update session
+	_, err = database.DB.Exec(`
+		UPDATE meditation_sessions 
+		SET status = 'completed', ended_at = ?, duration_seconds = ?, report = ?, updated_at = NOW()
+		WHERE id = ?
+	`, endedAt, duration, report, sessionID)
+	if err != nil {
+		log.Printf("Failed to update meditation session: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update session"})
+		return
+	}
+
+	session.Status = "completed"
+	session.EndedAt = &endedAt
+	session.DurationSeconds = duration
+	session.Report = report
+
+	c.JSON(http.StatusOK, gin.H{
+		"session": session,
+		"messages": messages,
+	})
+}
+
+// ResumeMeditation reactivates a completed meditation session
+func (h *MeditationHandler) ResumeMeditation(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	sessionIDStr := c.Param("id")
+	sessionID, err := strconv.Atoi(sessionIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid session ID"})
+		return
+	}
+
+	// Verify session belongs to user
+	var session models.MeditationSession
+	err = database.DB.QueryRow(`
+		SELECT id, user_id, goal, status FROM meditation_sessions WHERE id = ? AND user_id = ?
+	`, sessionID, userID).Scan(&session.ID, &session.UserID, &session.Goal, &session.Status)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Meditation session not found"})
+		return
+	}
+
+	if session.Status != "completed" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Only completed sessions can be resumed"})
+		return
+	}
+
+	// Reactivate the session
+	_, err = database.DB.Exec(`
+		UPDATE meditation_sessions 
+		SET status = 'active', ended_at = NULL, report = NULL, updated_at = NOW()
+		WHERE id = ?
+	`, sessionID)
+	if err != nil {
+		log.Printf("Failed to reactivate meditation session: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reactivate session"})
+		return
+	}
+
+	session.Status = "active"
+	session.EndedAt = nil
+	session.Report = ""
+
+	// Get messages
+	rows, err := database.DB.Query(`
+		SELECT id, session_id, type, content, created_at
+		FROM meditation_messages WHERE session_id = ?
+		ORDER BY created_at ASC
+	`, sessionID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch messages"})
+		return
+	}
+	defer rows.Close()
+
+	var messages []models.MeditationMessage
+	for rows.Next() {
+		var msg models.MeditationMessage
+		err := rows.Scan(&msg.ID, &msg.SessionID, &msg.Type, &msg.Content, &msg.CreatedAt)
+		if err != nil {
+			continue
+		}
+		messages = append(messages, msg)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"session": session,
+		"messages": messages,
+	})
+}
+
+// generateMeditationReport generates a meditation report
+func (h *MeditationHandler) generateMeditationReport(goal string, messages []models.MeditationMessage, durationSeconds int) (string, error) {
+	// Build conversation summary
+	conversationText := ""
+	for _, msg := range messages {
+		role := "Nutzer"
+		if msg.Type == "ai" {
+			role = "Coach"
+		}
+		conversationText += fmt.Sprintf("%s: %s\n\n", role, msg.Content)
+	}
+
+	durationMinutes := durationSeconds / 60
+	durationSecs := durationSeconds % 60
+
+	prompt := fmt.Sprintf(`Erstelle einen Meditationsbericht basierend auf folgender Meditation:
+
+Ziel der Meditation: %s
+Dauer: %d Minuten %d Sekunden
+
+Gesprächsverlauf:
+%s
+
+Erstelle einen strukturierten Bericht, der:
+- Eine Zusammenfassung der Meditation enthält
+- Die wichtigsten Erkenntnisse und Themen hervorhebt
+- Die Entwicklung während der Meditation beschreibt
+- Positive und reflektierende Perspektiven bietet
+- Auf Deutsch formuliert ist
+- Maximal 400 Wörter lang ist
+
+Format: Verwende Überschriften und Absätze für bessere Lesbarkeit.`, goal, durationMinutes, durationSecs, conversationText)
+
+	response, err := h.openAIService.GenerateResponse(prompt, "Du bist ein Meditations-Coach, der präzise und einfühlsame Meditationsberichte erstellt.")
+	if err != nil {
+		return "", err
+	}
+
+	return response, nil
+}
+
+// GetMeditationSessions returns all meditation sessions for the user
+func (h *MeditationHandler) GetMeditationSessions(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+
+	rows, err := database.DB.Query(`
+		SELECT id, user_id, goal, status, started_at, ended_at, duration_seconds, report, created_at, updated_at
+		FROM meditation_sessions WHERE user_id = ?
+		ORDER BY started_at DESC
+	`, userID)
+	if err != nil {
+		log.Printf("Failed to query meditation sessions: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch sessions"})
+		return
+	}
+	defer rows.Close()
+
+	var sessions []models.MeditationSession
+	for rows.Next() {
+		var session models.MeditationSession
+		var endedAt sql.NullTime
+		var goal, report sql.NullString
+		err := rows.Scan(&session.ID, &session.UserID, &goal, &session.Status, 
+			&session.StartedAt, &endedAt, &session.DurationSeconds, &report,
+			&session.CreatedAt, &session.UpdatedAt)
+		if err != nil {
+			log.Printf("Failed to scan meditation session: %v", err)
+			continue
+		}
+		if goal.Valid {
+			session.Goal = goal.String
+		}
+		if endedAt.Valid {
+			session.EndedAt = &endedAt.Time
+		}
+		if report.Valid {
+			session.Report = report.String
+		}
+		sessions = append(sessions, session)
+	}
+
+	c.JSON(http.StatusOK, sessions)
+}
+
+// GetMeditationSession returns a specific meditation session with messages
+func (h *MeditationHandler) GetMeditationSession(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	sessionIDStr := c.Param("id")
+	sessionID, err := strconv.Atoi(sessionIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid session ID"})
+		return
+	}
+
+	// Get session
+	var session models.MeditationSession
+	var endedAt sql.NullTime
+	var goal, report sql.NullString
+	err = database.DB.QueryRow(`
+		SELECT id, user_id, goal, status, started_at, ended_at, duration_seconds, report, created_at, updated_at
+		FROM meditation_sessions WHERE id = ? AND user_id = ?
+	`, sessionID, userID).Scan(&session.ID, &session.UserID, &goal, &session.Status,
+		&session.StartedAt, &endedAt, &session.DurationSeconds, &report,
+		&session.CreatedAt, &session.UpdatedAt)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Meditation session not found"})
+		return
+	}
+
+	if goal.Valid {
+		session.Goal = goal.String
+	}
+	if endedAt.Valid {
+		session.EndedAt = &endedAt.Time
+	}
+	if report.Valid {
+		session.Report = report.String
+	}
+
+	// Get messages
+	rows, err := database.DB.Query(`
+		SELECT id, session_id, type, content, created_at
+		FROM meditation_messages WHERE session_id = ?
+		ORDER BY created_at ASC
+	`, sessionID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch messages"})
+		return
+	}
+	defer rows.Close()
+
+	var messages []models.MeditationMessage
+	for rows.Next() {
+		var msg models.MeditationMessage
+		err := rows.Scan(&msg.ID, &msg.SessionID, &msg.Type, &msg.Content, &msg.CreatedAt)
+		if err != nil {
+			continue
+		}
+		messages = append(messages, msg)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"session": session,
+		"messages": messages,
+	})
 }

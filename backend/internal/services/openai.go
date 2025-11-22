@@ -209,6 +209,51 @@ func (s *OpenAIService) makeAPIRequest(request OpenAIRequest) (*OpenAIResponse, 
 	return &response, nil
 }
 
+// GenerateResponse generates a simple response from OpenAI based on a prompt and system message
+func (s *OpenAIService) GenerateResponse(prompt string, systemMessage string) (string, error) {
+	return s.GenerateResponseWithMaxTokens(prompt, systemMessage, 1000)
+}
+
+// GenerateResponseWithMaxTokens generates a response with a custom max tokens limit
+func (s *OpenAIService) GenerateResponseWithMaxTokens(prompt string, systemMessage string, maxTokens int) (string, error) {
+	if s.APIKey == "" {
+		return "", fmt.Errorf("OpenAI API key not configured")
+	}
+
+	// Prepare messages
+	messages := []Message{
+		{
+			Role:    "system",
+			Content: systemMessage,
+		},
+		{
+			Role:    "user",
+			Content: prompt,
+		},
+	}
+
+	// Prepare request
+	request := OpenAIRequest{
+		Model:       "gpt-3.5-turbo",
+		Messages:    messages,
+		MaxTokens:   maxTokens,
+		Temperature: 0.7,
+	}
+
+	// Make API call
+	response, err := s.makeAPIRequest(request)
+	if err != nil {
+		return "", fmt.Errorf("failed to make API request: %v", err)
+	}
+
+	// Extract response
+	if len(response.Choices) == 0 {
+		return "", fmt.Errorf("no response from OpenAI")
+	}
+
+	return response.Choices[0].Message.Content, nil
+}
+
 // generateSuggestions generates contextual suggestions based on the conversation
 func (s *OpenAIService) generateSuggestions(userMessage, coachResponse string) []string {
 	suggestions := []string{}

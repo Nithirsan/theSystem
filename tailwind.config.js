@@ -126,7 +126,9 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [
+    require('@tailwindcss/typography'),
+  ],
   safelist: [
     'bg-primary',
     'bg-secondary', 

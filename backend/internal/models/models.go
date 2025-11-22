@@ -186,3 +186,141 @@ type ChatMessageResponse struct {
 	Suggestions []string  `json:"suggestions"`
 	CreatedAt   time.Time `json:"created_at"`
 }
+
+// Note represents a note/plan
+type Note struct {
+	ID        int       `json:"id" db:"id"`
+	UserID    int       `json:"user_id" db:"user_id"`
+	Title     string    `json:"title" db:"title"`
+	Content   string    `json:"content" db:"content"`
+	Color     string    `json:"color" db:"color"`
+	IsPinned  bool      `json:"is_pinned" db:"is_pinned"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// ChecklistItem represents a checklist item in a note
+type ChecklistItem struct {
+	ID        int       `json:"id" db:"id"`
+	NoteID    int       `json:"note_id" db:"note_id"`
+	Text      string    `json:"text" db:"text"`
+	IsChecked bool      `json:"is_checked" db:"is_checked"`
+	Position  int       `json:"position" db:"position"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// NoteWithChecklist represents a note with its checklist items
+type NoteWithChecklist struct {
+	Note
+	ChecklistItems []ChecklistItem `json:"checklist_items"`
+	MediaAttachments []MediaAttachment `json:"media_attachments"`
+	PlanPreview     string          `json:"plan_preview"` // First line of generated plan for preview
+}
+
+// CreateNoteRequest represents create note request
+type CreateNoteRequest struct {
+	Title   string `json:"title" binding:"required"`
+	Content string `json:"content"`
+	Color   string `json:"color"`
+}
+
+// UpdateNoteRequest represents update note request
+type UpdateNoteRequest struct {
+	Title    *string `json:"title"`
+	Content  *string `json:"content"`
+	Color    *string `json:"color"`
+	IsPinned *bool   `json:"is_pinned"`
+}
+
+// CreateChecklistItemRequest represents create checklist item request
+type CreateChecklistItemRequest struct {
+	Text     string `json:"text" binding:"required"`
+	Position int    `json:"position"`
+}
+
+// UpdateChecklistItemRequest represents update checklist item request
+type UpdateChecklistItemRequest struct {
+	Text      *string `json:"text"`
+	IsChecked *bool   `json:"is_checked"`
+	Position  *int    `json:"position"`
+}
+
+// PlanData represents planning data for a note
+type PlanData struct {
+	ID              int       `json:"id" db:"id"`
+	NoteID          int       `json:"note_id" db:"note_id"`
+	Goal            string    `json:"goal" db:"goal"`
+	TimeAndMilestones string  `json:"time_and_milestones" db:"time_and_milestones"`
+	AdditionalInfo  string    `json:"additional_info" db:"additional_info"`
+	GeneratedPlan   string    `json:"generated_plan" db:"generated_plan"`
+	CreatedAt       time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// SavePlanAnswersRequest represents the request to save planning answers
+type SavePlanAnswersRequest struct {
+	Goal              string `json:"goal" binding:"required"`
+	TimeAndMilestones string `json:"time_and_milestones" binding:"required"`
+	AdditionalInfo    string `json:"additional_info" binding:"required"`
+}
+
+// UpdatePlanChatRequest represents the request to update plan via chat
+type UpdatePlanChatRequest struct {
+	Message string `json:"message" binding:"required"`
+}
+
+// MediaAttachment represents a media file attached to a note
+type MediaAttachment struct {
+	ID              int       `json:"id" db:"id"`
+	NoteID          int       `json:"note_id" db:"note_id"`
+	UserID          int       `json:"user_id" db:"user_id"`
+	FileName        string    `json:"file_name" db:"file_name"`
+	FileType        string    `json:"file_type" db:"file_type"` // 'audio', 'pdf', 'image'
+	FilePath        string    `json:"file_path" db:"file_path"`
+	FileSize        int64     `json:"file_size" db:"file_size"`
+	MimeType        string    `json:"mime_type" db:"mime_type"`
+	ConvertedText   string    `json:"converted_text" db:"converted_text"`
+	ConversionStatus string   `json:"conversion_status" db:"conversion_status"` // 'pending', 'processing', 'completed', 'failed'
+	CreatedAt       time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// MeditationSession represents a meditation session
+type MeditationSession struct {
+	ID              int       `json:"id" db:"id"`
+	UserID          int       `json:"user_id" db:"user_id"`
+	Goal            string    `json:"goal" db:"goal"`
+	Status          string    `json:"status" db:"status"` // 'active', 'completed', 'cancelled'
+	StartedAt       time.Time `json:"started_at" db:"started_at"`
+	EndedAt         *time.Time `json:"ended_at" db:"ended_at"`
+	DurationSeconds int       `json:"duration_seconds" db:"duration_seconds"`
+	Report          string    `json:"report" db:"report"`
+	CreatedAt       time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at" db:"updated_at"`
+}
+
+// MeditationMessage represents a message in a meditation session
+type MeditationMessage struct {
+	ID        int       `json:"id" db:"id"`
+	SessionID int       `json:"session_id" db:"session_id"`
+	Type      string    `json:"type" db:"type"` // 'user' or 'ai'
+	Content   string    `json:"content" db:"content"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+}
+
+// MeditationSessionWithMessages represents a meditation session with its messages
+type MeditationSessionWithMessages struct {
+	MeditationSession
+	Messages []MeditationMessage `json:"messages"`
+}
+
+// StartMeditationRequest represents the request to start a meditation
+type StartMeditationRequest struct {
+	Goal string `json:"goal" binding:"required"`
+}
+
+// SendMeditationMessageRequest represents the request to send a message in meditation
+type SendMeditationMessageRequest struct {
+	Content string `json:"content" binding:"required"`
+}

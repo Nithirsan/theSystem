@@ -45,10 +45,11 @@ CREATE TABLE IF NOT EXISTS habit_completions (
     habit_id INT NOT NULL,
     user_id INT NOT NULL,
     completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_date DATE GENERATED ALWAYS AS (DATE(completed_at)) STORED,
     streak_count INT DEFAULT 1,
     FOREIGN KEY (habit_id) REFERENCES habits(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    UNIQUE KEY unique_daily_completion (habit_id, DATE(completed_at))
+    UNIQUE KEY unique_daily_completion (habit_id, completed_date)
 );
 
 -- Tasks table

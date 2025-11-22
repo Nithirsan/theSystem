@@ -24,7 +24,7 @@ const BottomNavigation = () => {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-card-light/80 dark:bg-card-dark/80 backdrop-blur-lg border-t border-border-light dark:border-border-dark h-20 z-40">
-      <div className="flex justify-around items-center h-full max-w-md mx-auto px-2">
+      <div className="flex justify-around items-center h-full max-w-md mx-auto px-2 overflow-x-auto">
         <Link to="/" className={getLinkClasses('/')}>
           <span className="material-symbols-outlined">home</span>
           <span className={getTextClasses('/')}>Home</span>
@@ -40,6 +40,14 @@ const BottomNavigation = () => {
         <Link to="/journal" className={getLinkClasses('/journal')}>
           <span className="material-symbols-outlined">edit_square</span>
           <span className={getTextClasses('/journal')}>Journal</span>
+        </Link>
+        <Link to="/plan" className={getLinkClasses('/plan')}>
+          <span className="material-symbols-outlined">note_stack</span>
+          <span className={getTextClasses('/plan')}>Plan</span>
+        </Link>
+        <Link to="/reflektion" className={getLinkClasses('/reflektion')}>
+          <span className="material-symbols-outlined">self_improvement</span>
+          <span className={getTextClasses('/reflektion')}>Reflektion</span>
         </Link>
         <Link to="/team" className={getLinkClasses('/team')}>
           <span className="material-symbols-outlined">groups</span>

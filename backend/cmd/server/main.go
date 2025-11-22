@@ -14,8 +14,18 @@ import (
 )
 
 func main() {
-	// Load environment variables
-	if err := godotenv.Load("config.env"); err != nil {
+	// Load environment variables from backend directory
+	// Try multiple paths: current dir, parent dir (backend), and two levels up
+	envPaths := []string{"config.env", "../config.env", "../../config.env"}
+	var envLoaded bool
+	for _, path := range envPaths {
+		if err := godotenv.Load(path); err == nil {
+			log.Printf("Loaded config.env from: %s", path)
+			envLoaded = true
+			break
+		}
+	}
+	if !envLoaded {
 		log.Println("No config.env file found, using system environment variables")
 	}
 
@@ -45,8 +55,10 @@ func main() {
 	authHandler := &handlers.AuthHandler{}
 	habitHandler := &handlers.HabitHandler{}
 	taskHandler := &handlers.TaskHandler{}
-	journalHandler := handlers.NewJournalHandler()
-	chatHandler := handlers.NewChatHandler()
+		journalHandler := handlers.NewJournalHandler()
+		chatHandler := handlers.NewChatHandler()
+		noteHandler := handlers.NewNoteHandler()
+		meditationHandler := handlers.NewMeditationHandler()
 
 	// Health check endpoint
 	r.GET("/health", func(c *gin.Context) {
@@ -107,6 +119,39 @@ func main() {
 			chat.POST("/sessions", chatHandler.CreateChatSession)
 			chat.GET("/sessions/:id/messages", chatHandler.GetChatMessages)
 			chat.POST("/sessions/:id/messages", chatHandler.SendMessage)
+		}
+
+		// Notes/Plans routes
+		notes := api.Group("/notes")
+		notes.Use(middleware.AuthMiddleware())
+		{
+			notes.GET("", noteHandler.GetNotes)
+			notes.POST("", noteHandler.CreateNote)
+			notes.PUT("/:id", noteHandler.UpdateNote)
+			notes.DELETE("/:id", noteHandler.DeleteNote)
+			notes.POST("/:id/checklist", noteHandler.CreateChecklistItem)
+			notes.PUT("/:id/checklist/:itemId", noteHandler.UpdateChecklistItem)
+			notes.DELETE("/:id/checklist/:itemId", noteHandler.DeleteChecklistItem)
+			notes.GET("/:id/plan", noteHandler.GetPlanData)
+			notes.POST("/:id/plan/answers", noteHandler.SavePlanAnswers)
+			notes.POST("/:id/plan/chat", noteHandler.UpdatePlanViaChat)
+			notes.POST("/:id/plan/adopt", noteHandler.AdoptPlan)
+			notes.POST("/:id/plan/generate-checklist", noteHandler.GenerateChecklist)
+			notes.POST("/:id/media", noteHandler.UploadMedia)
+			notes.GET("/:id/media", noteHandler.GetMediaAttachments)
+			notes.DELETE("/:id/media/:attachmentId", noteHandler.DeleteMediaAttachment)
+		}
+
+		// Meditation/Reflection routes
+		meditation := api.Group("/meditation")
+		meditation.Use(middleware.AuthMiddleware())
+		{
+			meditation.GET("", meditationHandler.GetMeditationSessions)
+			meditation.POST("", meditationHandler.StartMeditation)
+			meditation.GET("/:id", meditationHandler.GetMeditationSession)
+			meditation.POST("/:id/message", meditationHandler.SendMeditationMessage)
+			meditation.POST("/:id/resume", meditationHandler.ResumeMeditation)
+			meditation.POST("/:id/end", meditationHandler.EndMeditation)
 		}
 	}
 

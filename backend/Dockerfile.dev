@@ -7,9 +7,6 @@ RUN apk add --no-cache git ca-certificates
 # Set working directory
 WORKDIR /app
 
-# Install air for hot reloading
-RUN go install github.com/cosmtrek/air@latest
-
 # Copy go mod files
 COPY go.mod go.sum ./
 
@@ -22,5 +19,5 @@ COPY . .
 # Expose port
 EXPOSE 8080
 
-# Start with air for hot reloading
-CMD ["air", "-c", ".air.toml"]
+# Start with go run for development
+CMD ["go", "run", "cmd/server/main.go"]

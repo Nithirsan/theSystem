@@ -1,7 +1,37 @@
 Alles Lokal:
 Backend:
+═══════════════════════════════════════════════════════════════
+WICHTIG: Stelle sicher, dass du im RICHTIGEN Verzeichnis bist!
+═══════════════════════════════════════════════════════════════
+
+KORREKTE VERZEICHNISSE:
+- Projekt-Root: F:\Desktop\Projects\TheSystem\theSystem
+- Backend-Verzeichnis: F:\Desktop\Projects\TheSystem\theSystem\backend
+
+START-OPTIONEN:
+───────────────────────────────────────────────────────────────
+Option 1 (Empfohlen - mit absolutem Pfad):
+cd F:\Desktop\Projects\TheSystem\theSystem\backend
+go run cmd/server/main.go
+
+Option 2 (Wenn bereits im Projekt-Root):
 cd backend
 go run cmd/server/main.go
+
+Option 3 (PowerShell Script - wenn im backend-Verzeichnis):
+cd F:\Desktop\Projects\TheSystem\theSystem\backend
+.\start.ps1
+
+───────────────────────────────────────────────────────────────
+PROBLEM-BEHEBUNG:
+───────────────────────────────────────────────────────────────
+Wenn du in "backend\backend" bist (ein Level zu tief):
+  cd ..                    # Gehe ein Level nach oben
+  go run cmd/server/main.go
+
+Wenn Port 8080 bereits belegt ist:
+  Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue | Select-Object LocalPort,OwningProcess | Format-Table
+  taskkill /PID [OwningProcess] /F
 
 Frontend:
  npm run dev

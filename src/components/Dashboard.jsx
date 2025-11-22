@@ -370,6 +370,7 @@ const Dashboard = () => {
                   
                   dayCells.push(
                     <button
+                      key={`day-${year}-${month}-${day}`}
                       type="button"
                       onClick={() => handleDayClick(date)}
                       className={`aspect-square flex flex-col items-center justify-start p-1 rounded-lg border transition-colors cursor-pointer ${
